@@ -2,10 +2,6 @@ using Azure.AI.OpenAI;
 using Azure.Identity;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
-using OpenTelemetry;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
 
 // ── Configuration ────────────────────────────────────────────────────────────
 var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
@@ -13,40 +9,12 @@ var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
 var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
     ?? "gpt-5-mini";
 
-// Set OTEL_EXPORTER_OTLP_ENDPOINT (e.g. http://localhost:4317) to ship traces to
-// the Aspire dashboard instead of dumping them to stdout.
-var otlp = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
-
-// ── Pillar 3: observability ──────────────────────────────────────────────────
-// MEAI emits spans and metrics following the OpenTelemetry GenAI semantic
-// conventions, so token counts and latency come from the framework, not from
-// bookkeeping code you write yourself.
-var resource = ResourceBuilder.CreateDefault().AddService("ReviewAgent.Console");
-
-using var traces = Sdk.CreateTracerProviderBuilder()
-    .SetResourceBuilder(resource)
-    .AddSource("*")
-    .AddConsoleExporter()
-    .AddOtlpExporterIf(otlp)
-    .Build();
-
-using var metrics = Sdk.CreateMeterProviderBuilder()
-    .SetResourceBuilder(resource)
-    .AddMeter("*")
-    .AddConsoleExporter()
-    .AddOtlpExporterIf(otlp)
-    .Build();
-
 // ── Pillar 1: the provider-neutral primitive ─────────────────────────────────
 // Everything below depends only on IChatClient, so switching model provider is
-// a change to these lines and nothing else in the file.
-// EnableSensitiveData logs prompts and completions — fine locally, never in prod.
+// a change to these three lines and nothing else in the file.
 IChatClient chatClient = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
     .GetChatClient(deployment)
-    .AsIChatClient()
-    .AsBuilder()
-    .UseOpenTelemetry(configure: o => o.EnableSensitiveData = true)
-    .Build();
+    .AsIChatClient();
 
 // ── Pillar 2: the agent ──────────────────────────────────────────────────────
 AIAgent reviewer = chatClient.AsAIAgent(
@@ -71,7 +39,8 @@ AgentResponse response = await reviewer.RunAsync(
 
 Console.WriteLine(response.Text);
 
-// ── Cost of this single call, computed from the reported token usage ─────────
+// ── Token usage and cost, straight off the response ──────────────────────────
+// No OpenTelemetry needed for this — response.Usage carries the counts.
 PrintCost(response);
 
 static void PrintCost(AgentResponse response)
@@ -81,15 +50,14 @@ static void PrintCost(AgentResponse response)
     const decimal OutputPer1M = 2.00m;
     const decimal UsdToInr = 88m;
 
-    var usage = response.Usage;
-    if (usage is null)
+    if (response.Usage is null)
     {
         Console.WriteLine("\n[cost] No usage reported on this response.");
         return;
     }
 
-    var inTok = usage.InputTokenCount ?? 0;
-    var outTok = usage.OutputTokenCount ?? 0;
+    var inTok = response.Usage.InputTokenCount ?? 0;
+    var outTok = response.Usage.OutputTokenCount ?? 0;
     var usd = (inTok / 1_000_000m * InputPer1M) + (outTok / 1_000_000m * OutputPer1M);
 
     Console.WriteLine($"""
@@ -134,15 +102,7 @@ static string SampleCode() => """
 // S13 A2A: expose the reviewer so another agent can call it
 // S14 MCP: consume the GitHub MCP server to review a real PR
 // S15 AG-UI: put a chat front end on it
-
-// Small helpers so the pipeline setup above stays readable.
-static class OtelExtensions
-{
-    public static TracerProviderBuilder AddOtlpExporterIf(
-        this TracerProviderBuilder builder, string? otlpEndpoint) =>
-        string.IsNullOrWhiteSpace(otlpEndpoint) ? builder : builder.AddOtlpExporter();
-
-    public static MeterProviderBuilder AddOtlpExporterIf(
-        this MeterProviderBuilder builder, string? otlpEndpoint) =>
-        string.IsNullOrWhiteSpace(otlpEndpoint) ? builder : builder.AddOtlpExporter();
-}
+//
+// Observability: deliberately left out. The instructor reintroduces OpenTelemetry
+// in Section 5's MinimalAgent, where Aspire renders it as a dashboard instead of
+// dumping histogram buckets to stdout. Add it back then, not before.
