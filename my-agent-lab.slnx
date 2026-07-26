@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ReviewAgent.Console/ReviewAgent.Console.csproj" />
+  </Folder>
+</Solution>
