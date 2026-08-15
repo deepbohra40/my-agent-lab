@@ -1,0 +1,42 @@
+*** SYNTHETIC TEST DOCUMENT - FABRICATED DATA - NOT A REAL PROPERTY OR BORROWER ***
+
+LAKEVIEW CORPORATE CENTER
+CERTIFIED RENT ROLL
+As of: June 30, 2026
+Prepared by: Lakeview Holdings LLC (Borrower)
+Loan Reference: CRE-2019-0447
+
+Property Address: 4400 Lakeview Parkway, Charlotte, NC 28217
+Total Rentable Square Feet: 142,000
+
+--------------------------------------------------------------------------------
+SUITE   TENANT                          RSF       $/RSF    ANNUAL RENT   LEASE EXP
+--------------------------------------------------------------------------------
+100     Harrow & Finch LLP            24,800     29.50       731,600     03/31/2028
+210     Continental Data Systems      31,500     27.00       850,500     12/31/2027
+220     VACANT                        10,200        --            --            --
+300     Byrne Actuarial Group         12,400     31.00       384,400     09/30/2029
+350     Pinnacle Staffing Inc          8,900     26.50       235,850     06/30/2027
+400     Vertex Engineering PC         19,750     28.00       553,000     01/31/2030
+450     VACANT                         7,850        --            --            --
+505     Cardinal Title Services        6,300     30.00       189,000     11/30/2026
+600     VACANT                         5,350        --            --            --
+610     Meridian Wealth Advisors      14,950     29.00       433,550     08/31/2028
+--------------------------------------------------------------------------------
+
+SUMMARY
+  Total rentable square feet ................ 142,000
+  Occupied square feet ...................... 118,600
+  Vacant square feet ........................  23,400
+  Total annual scheduled base rent .......... 3,377,900
+
+NOTES
+  1. Cardinal Title Services (Suite 505) has given notice of non-renewal
+     effective 11/30/2026. Replacement tenant not yet identified.
+  2. Suite 220 has been vacant since Continental Data Systems contracted its
+     footprint in Q3 2024.
+  3. No tenant is more than 30 days delinquent as of the date of this roll.
+
+Certified true and correct:
+  /s/ D. Reyes, Asset Manager, Lakeview Holdings LLC
+  Date: July 14, 2026

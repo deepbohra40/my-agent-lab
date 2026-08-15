@@ -1,0 +1,45 @@
+*** SYNTHETIC TEST DOCUMENT - FABRICATED DATA - NOT A REAL PROPERTY OR BORROWER ***
+
+MAGNOLIA TRACE APARTMENTS
+RENT ROLL SUMMARY
+As of: June 30, 2026
+Borrower: Magnolia Trace Partners LP
+Loan Reference: CRE-2021-0912
+
+Property Address: 2900 Magnolia Trace Drive, Raleigh, NC 27612
+Year Built: 2016
+Total Units: 240
+
+UNIT MIX
+--------------------------------------------------------------------------------
+TYPE            UNITS   OCCUPIED   VACANT   AVG SF   AVG RENT   ANNUAL SCHEDULED
+--------------------------------------------------------------------------------
+Studio             36         35        1      552      1,285          554,880
+1BR / 1BA         104        101        3      742      1,540        1,921,920
+2BR / 2BA          82         79        3    1,086      1,975        1,943,400
+3BR / 2BA          18         17        1    1,340      2,410          520,560
+--------------------------------------------------------------------------------
+TOTAL             240        232        8                            4,940,760
+
+SUMMARY
+  Total units ............................... 240
+  Occupied units ............................ 232
+  Vacant units ..............................   8
+  Physical occupancy ........................ 96.67%
+  Total annual scheduled rent ............... 4,940,760
+  Average trailing 3-month economic occupancy 95.10%
+
+DELINQUENCY
+  Current .................................... 229 units
+  30-59 days .................................   2 units
+  60-89 days .................................   1 unit
+  90+ days ...................................   0 units
+
+NOTES
+  1. Four of the eight vacant units are in make-ready status with an expected
+     turn of fewer than 14 days.
+  2. Concessions of one-half month were offered on 6 new leases signed in Q2.
+
+Certified true and correct:
+  /s/ A. Delgado, Regional Property Manager
+  Date: July 9, 2026

@@ -1,0 +1,44 @@
+*** SYNTHETIC TEST DOCUMENT - FABRICATED DATA - NOT A REAL PROPERTY OR BORROWER ***
+
+LAKEVIEW CORPORATE CENTER
+OPERATING STATEMENT - TRAILING TWELVE MONTHS
+Period: July 1, 2025 through June 30, 2026
+Borrower: Lakeview Holdings LLC
+Loan Reference: CRE-2019-0447
+Basis: Cash, unaudited, borrower-prepared
+
+REVENUE
+  Base rental income .................................... 3,377,900
+  Operating expense reimbursements ......................   892,400
+  Parking income ........................................   341,200
+  Other income (storage, signage, late fees) ............    68,500
+                                                          ---------
+  Gross potential revenue ............................... 4,680,000
+  Less: vacancy and credit loss .........................  (160,000)
+                                                          ---------
+  EFFECTIVE GROSS INCOME ................................ 4,520,000
+
+OPERATING EXPENSES
+  Real estate taxes .....................................   412,880
+  Property insurance ....................................   186,500
+  Utilities .............................................   478,200
+  Repairs and maintenance ...............................   341,600
+  Janitorial ............................................   262,400
+  Management fee (4.0% of EGI) ..........................   180,800
+  On-site payroll .......................................   348,900
+  General and administrative ............................    97,300
+  Security ..............................................    81,420
+                                                          ---------
+  TOTAL OPERATING EXPENSES .............................. 2,390,000
+
+  NET OPERATING INCOME (as reported by Borrower) ........ 2,284,000  (1)
+
+FOOTNOTES
+  (1) Borrower has excluded $154,000 of roof membrane replacement from
+      operating expenses on the basis that the work is capital in nature and
+      non-recurring. The amount remains included in the Repairs and Maintenance
+      line above for presentation purposes.
+  (2) Management fee is paid to an affiliate of the Borrower.
+
+Prepared by: M. Okafor, Controller, Lakeview Holdings LLC
+Date: July 21, 2026

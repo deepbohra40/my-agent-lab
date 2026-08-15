@@ -1,0 +1,34 @@
+*** SYNTHETIC TEST DOCUMENT - FABRICATED DATA - NOT A REAL TAX AUTHORITY OR PARCEL ***
+
+MECKLENSHIRE COUNTY OFFICE OF THE TAX COLLECTOR
+2025 REAL PROPERTY TAX BILL
+
+Bill Number ............... 2025-RP-4471902
+Parcel Identification ..... 145-882-04
+Property Address .......... 4400 Lakeview Parkway, Charlotte, NC 28217
+Owner of Record ........... Lakeview Holdings LLC
+
+VALUATION
+  Land ...................................... $  4,120,000
+  Improvements .............................. $ 23,780,000
+  Total Assessed Value ...................... $ 27,900,000
+
+LEVY
+  County general ............ 0.9120 per $100 ..... $ 254,448.00
+  City of Charlotte ......... 0.4875 per $100 ..... $ 136,012.50
+  Municipal service district  0.0798 per $100 ..... $  22,419.50
+                                                    -----------
+  TOTAL 2025 TAX DUE .............................. $ 412,880.00
+
+PAYMENT
+  Due Date .................. January 5, 2026
+  Delinquent After .......... January 6, 2026
+  Interest .................. 2% first month, 0.75% each month thereafter
+
+  *** PAID IN FULL ***
+  Payment received: December 29, 2025
+  Method: ACH transfer, confirmation 8827-40119
+  Balance Due: $0.00
+
+This bill covers the period January 1, 2025 through December 31, 2025.
+Questions regarding valuation should be directed to the Office of the Assessor.
