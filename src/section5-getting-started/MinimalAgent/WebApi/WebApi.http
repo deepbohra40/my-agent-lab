@@ -1,0 +1,12 @@
+@WebApi_HostAddress = http://localhost:5143
+
+### Drive the agent through the plain HTTP endpoint (step 6)
+POST {{WebApi_HostAddress}}/api/chat
+Content-Type: application/json
+
+{
+  "message": "I am getting a DNS resolution error connecting to the corporate VPN."
+}
+
+### Health
+GET {{WebApi_HostAddress}}/health
