@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Scoped to the test project rather than the whole solution, on purpose.
+      # The ProjectReference pulls in CreServicing.Agent, so the code under test
+      # is fully built and analysed. What is deliberately left out is the
+      # section 5 MinimalAgent/AppHost project: it needs the Aspire workload,
+      # which would add an install step and several minutes to every run in
+      # order to compile a throwaway follow-along scratchpad that has no tests.
+      #
+      # If CreServicing.Agent ever gains an Aspire host of its own — item 3 on
+      # the roadmap — this narrows the wrong thing and should be revisited.
+      - name: Restore
+        run: dotnet restore tests/CreServicing.Agent.Tests/CreServicing.Agent.Tests.csproj
+
+      - name: Build
+        run: >
+          dotnet build tests/CreServicing.Agent.Tests/CreServicing.Agent.Tests.csproj
+          --configuration Release
+          --no-restore
+          -warnaserror
+
+      # No Azure credentials, no AZURE_OPENAI_* variables, no network. Every test
+      # here runs against CovenantEngine and Covenants, which are pure functions.
+      # The moment a test needs a model, it does not belong in this job — it
+      # belongs behind the eval harness, on a schedule, with a cost budget.
+      - name: Test
+        run: >
+          dotnet test tests/CreServicing.Agent.Tests/CreServicing.Agent.Tests.csproj
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --logger "console;verbosity=normal"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: '**/test-results.trx'
+          retention-days: 14

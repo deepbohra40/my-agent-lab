@@ -17,4 +17,7 @@
     <Project Path="src/section5-getting-started/MinimalAgent/ServiceDefaults/ServiceDefaults.csproj" />
     <Project Path="src/section5-getting-started/MinimalAgent/WebApi/WebApi.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CreServicing.Agent.Tests/CreServicing.Agent.Tests.csproj" />
+  </Folder>
 </Solution>

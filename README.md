@@ -1,5 +1,7 @@
 # my-agent-lab
 
+[![CI](https://github.com/deepbohra40/my-agent-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/deepbohra40/my-agent-lab/actions/workflows/ci.yml)
+
 My own build-along project for the Udemy course *Agentic AI Development with Agent Framework, MCP and .NET*.
 Kept deliberately **outside** the instructor's clone (`../develop-agents`, remote `mehmetozkaya/develop-agents`)
 so that `git pull` there never collides with my work.
@@ -80,11 +82,57 @@ dotnet run --project src/section6-tool-use/FunctionCall
 Ports for `MinimalAgent` are shifted off the course repo's defaults (WebApi `5143`/`7227`,
 dashboard `15379`/`17242`) so both can run side by side without collisions.
 
+## Tests
+
+```powershell
+dotnet test
+```
+
+40 tests over `CovenantEngine` and `Covenants`, running in about 200ms. No Azure
+credentials, no network, no cost — everything under test is a pure function, which
+is the point rather than a convenience.
+
+What they actually pin:
+
+- **The band edges, not the middles.** A DSCR three points clear of its floor
+  passes under any plausible implementation. A DSCR sitting *exactly* on the floor
+  is where `<` and `<=` diverge, so every covenant test is asserted one tick either
+  side of its boundary. Sitting exactly on a covenant minimum yields `Watch`, never
+  `Pass` — a policy decision that is invisible in the code and would otherwise be
+  one careless refactor from silently inverting.
+- **A missing appraisal is `LTV-UNTESTED`, not silence.** An untested covenant is
+  not a passing covenant. Silence would let a reviewer conclude LTV was checked and
+  cleared.
+- **Culture independence.** Evidence strings are pinned to `en-US` inside the
+  engine, so the same breach filed from Bangalore and from Frankfurt produces
+  byte-identical audit records rather than `₹2,21,80,000` and `22.180.000 $`.
+  Asserted against `hi-IN`, `de-DE` and `ja-JP`.
+- **Determinism**, across 50 consecutive evaluations of the same distressed loan.
+- **Every emitted code is declared in `KnownCodes`**, so the engine can never emit a
+  finding that its own write path would refuse to file.
+
+One test is deliberately `[Skip]`-ed: a loan *past* its maturity date currently
+produces no finding at all, because the horizon check guards with
+`daysToMaturity >= 0`. A matured unpaid loan is the most serious state in
+servicing, so that silence is wrong. The test is left in place, skipped, so the gap
+shows up in the test report rather than living in someone's memory.
+
+CI runs the same suite on every push and pull request. It is scoped to the test
+project rather than the whole solution, so the Aspire follow-along scratchpad does
+not drag its workload into every run.
+
 ## Structure
 
 ```
 my-agent-lab/
 ├── my-agent-lab.slnx
+├── .github/workflows/ci.yml        # build + test on every push and PR
+├── tests/
+│   └── CreServicing.Agent.Tests/   # xUnit — boundaries, determinism, culture pinning
+│       ├── Given.cs                #   one compliant loan; each test perturbs one field
+│       ├── CovenantEngineTests.cs  #   the band edges, one tick either side
+│       ├── CovenantsTests.cs       #   the four primitives and their divide-by-zero guards
+│       └── AuditabilityTests.cs    #   the properties that justify C# over a model
 └── src/
     ├── CreServicing.Agent/          # the derived project — CRE covenant compliance
     │   ├── Domain/                  #   LoanTerms, Covenants, CovenantEngine, Extractions
