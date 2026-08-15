@@ -4,11 +4,26 @@ My own build-along project for the Udemy course *Agentic AI Development with Age
 Kept deliberately **outside** the instructor's clone (`../develop-agents`, remote `mehmetozkaya/develop-agents`)
 so that `git pull` there never collides with my work.
 
-**Domain: an automated C# code reviewer.** Chosen because it gives every section
-something real to bite on — tools that read files, documents to ground answers in,
-specialist agents worth routing between, and a write action that genuinely warrants
-a human approval step. Deliberately *not* IT-support ticket triage, which is what the
-course samples use, so I derive the structure instead of copying it.
+**Domain: CRE post-close document intake and covenant compliance.** A borrower
+submits a quarterly package — rent roll, operating statement, insurance certificate,
+tax bill. Something has to read it, extract the numbers, test them against the
+covenants in the loan agreement, and raise an exception when one fails. Today that
+something is an analyst with a spreadsheet.
+
+The domain gives every section something real to bite on — documents to extract from,
+a system of record to call, specialist agents worth routing between, covenant language
+worth grounding answers in, and a write action (a servicing exception that reaches a
+borrower) that genuinely warrants a human approval step. It is deliberately *not* the
+IT-support ticket triage the course samples use, so I derive the structure instead of
+copying it.
+
+**Everything in `fixtures/` and `MockServicingSystem` is fabricated.** No real
+borrower, property, loan, or document. That is not a limitation — it is the reason
+this can exist outside a bank's network at all.
+
+> `src/ReviewAgent.Console` was the earlier code-review take on the same idea,
+> superseded by `CreServicing.Agent`. Kept until the section 5 material is fully
+> rebuilt in the new domain, then deleted.
 
 ## How I use this
 
@@ -39,12 +54,31 @@ instance opened before they were set.**
 ## Run
 
 ```powershell
-# Review the built-in flawed sample
+# The covenant review across all three synthetic loans.
+# No Azure call, no key, no cost — the deterministic half runs on its own.
+dotnet run --project src/CreServicing.Agent
+
+# One loan
+dotnet run --project src/CreServicing.Agent -- CRE-2019-0447
+
+# Superseded, see note above
 dotnet run --project src/ReviewAgent.Console
 
-# Review a real file
-dotnet run --project src/ReviewAgent.Console -- path/to/File.cs
+# Section 5 follow-along scratchpads
+dotnet run --project src/section5-getting-started/BasicAgentApp
+dotnet run --project src/section5-getting-started/Streaming
+dotnet run --project src/section5-getting-started/MultiTurn
+dotnet run --project src/section5-getting-started/StructuredOutput
+
+# Aspire app — launches WebApi and opens the dashboard
+dotnet run --project src/section5-getting-started/MinimalAgent/AppHost
+
+# Section 6
+dotnet run --project src/section6-tool-use/FunctionCall
 ```
+
+Ports for `MinimalAgent` are shifted off the course repo's defaults (WebApi `5143`/`7227`,
+dashboard `15379`/`17242`) so both can run side by side without collisions.
 
 ## Structure
 
@@ -52,8 +86,57 @@ dotnet run --project src/ReviewAgent.Console -- path/to/File.cs
 my-agent-lab/
 ├── my-agent-lab.slnx
 └── src/
-    └── ReviewAgent.Console/     # S5: one agent, one call
+    ├── CreServicing.Agent/          # the derived project — CRE covenant compliance
+    │   ├── Domain/                  #   LoanTerms, Covenants, CovenantEngine, Extractions
+    │   ├── Data/                    #   MockServicingSystem (system of record), DocumentStore
+    │   ├── Tools/                   #   ServicingTools — S6 scaffold, [Description] is the work
+    │   └── fixtures/                #   synthetic borrower packages
+    │       ├── CRE-2019-0447/       #     distressed office — four documents, four breaches
+    │       ├── CRE-2021-0912/       #     healthy multifamily — must produce a CLEAN report
+    │       ├── adversarial/         #     rent roll carrying a prompt injection
+    │       └── golden/              #     expected-extractions.json — the eval answer key
+    ├── ReviewAgent.Console/         # superseded, pending deletion
+    ├── section6-tool-use/
+    │   └── FunctionCall/            # AIFunctionFactory — the model calls your C#
+    └── section5-getting-started/
+        ├── BasicAgentApp/           # follow-along scratchpad, mirrors the course repo
+        ├── MultiTurn/               # AgentSession — history across turns
+        ├── Streaming/               # RunStreamingAsync + AgentResponseUpdate
+        ├── StructuredOutput/        # RunAsync<T> — typed results, no hand-parsing
+        └── MinimalAgent/            # Aspire + DevUI (lecture 22)
+            ├── AppHost/             #   orchestrator — startup project, F5 here
+            ├── ServiceDefaults/     #   OTel, health, resilience — copied verbatim
+            └── WebApi/              #   the only file worth typing
 ```
+
+Two kinds of project live here and they serve different purposes. `CreServicing.Agent`
+is the derived work — step 3 of the loop above, built from memory in the CRE domain.
+The `sectionN-*` folders are throwaway follow-along scratchpads that mirror
+`../develop-agents/src/sectionN-*` path-for-path, so a stuck moment is a plain
+side-by-side diff. Type into them during the video; derive in the real project after.
+
+### The line the project is built around
+
+`Domain/Covenants.cs` and `Domain/CovenantEngine.cs` contain no model call and never
+will. A language model is good at reading a scanned rent roll and reporting 83.5%
+occupancy; it is the wrong tool for deciding whether 83.5% breaches an 85% floor,
+because that comparison has to be reproducible and auditable and no sampled decoder
+can promise either.
+
+**The model extracts. C# decides.** Everything the agent layer adds sits upstream of
+`CovenantEngine.Evaluate`, and being able to point at where I refused to let the model
+decide is the single clearest signal I can send about understanding these systems.
+
+That is also why the deterministic half runs today with no Azure call at all — the
+agent layer is the part still being built, not the part holding it up.
+
+### Roadmap
+
+Section-by-section, at the bottom of `src/CreServicing.Agent/Program.cs`, along with
+the five things the course does not cover and interviews do: **evaluation** against
+`fixtures/golden/`, **prompt injection** via `fixtures/adversarial/`, **cost per
+package**, **OCR** for real scanned documents, and **failure routing** when
+confidence is low or two documents disagree.
 
 Package versions are pinned to match the course repo's section 5 projects
 (`Azure.AI.OpenAI 2.9.0-beta.1`, `Microsoft.Agents.AI.OpenAI 1.3.0`) so the

@@ -1,5 +1,20 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/CreServicing.Agent/CreServicing.Agent.csproj" />
     <Project Path="src/ReviewAgent.Console/ReviewAgent.Console.csproj" />
+  </Folder>
+  <Folder Name="/src/section5-getting-started/">
+    <Project Path="src/section5-getting-started/BasicAgentApp/BasicAgentApp.csproj" />
+    <Project Path="src/section5-getting-started/MultiTurn/MultiTurn.csproj" />
+    <Project Path="src/section5-getting-started/Streaming/Streaming.csproj" />
+    <Project Path="src/section5-getting-started/StructuredOutput/StructuredOutput.csproj" />
+  </Folder>
+  <Folder Name="/src/section6-tool-use/">
+    <Project Path="src/section6-tool-use/FunctionCall/FunctionCall.csproj" />
+  </Folder>
+  <Folder Name="/src/section5-getting-started/MinimalAgent/">
+    <Project Path="src/section5-getting-started/MinimalAgent/AppHost/AppHost.csproj" />
+    <Project Path="src/section5-getting-started/MinimalAgent/ServiceDefaults/ServiceDefaults.csproj" />
+    <Project Path="src/section5-getting-started/MinimalAgent/WebApi/WebApi.csproj" />
   </Folder>
 </Solution>
