@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Azure.AI.OpenAI;
 using Azure.Identity;
@@ -37,6 +38,11 @@ namespace CreServicing.Agent.Agents;
 /// Three outputs, printed in this order and worth reading in it: the tool trace
 /// (what the agent did), the answer (what it says it did), and the ledger (what
 /// actually landed on the loan file). The third is the only one that is evidence.
+///
+/// The trace is also printed incrementally, at each pause, ahead of the question.
+/// A gate that shows the operator only the arguments of the write is asking them
+/// to authorise the agent's reading of documents they have not seen — see
+/// <see cref="Decide"/> for the other half of making the gate mean something.
 /// </summary>
 public static class ServicingAgentHost
 {
@@ -116,29 +122,38 @@ public static class ServicingAgentHost
         // The gate is applied here, at registration, not inside the method. The
         // four reads go in raw; the write is wrapped. That asymmetry IS the design
         // — sort by blast radius, and let the tool surface express it.
-        AIFunction fileException = new ApprovalRequiredAIFunction(
-            AIFunctionFactory.Create(ServicingTools.CreateServicingException));
+        AIFunction[] tools =
+        [
+            AIFunctionFactory.Create(ServicingTools.GetLoanTerms),
+            AIFunctionFactory.Create(ServicingTools.ListPackageDocuments),
+            AIFunctionFactory.Create(ServicingTools.GetDocumentText),
+            AIFunctionFactory.Create(ServicingTools.EvaluateCovenants),
+            new ApprovalRequiredAIFunction(
+                AIFunctionFactory.Create(ServicingTools.CreateServicingException))
+        ];
+
+        // Derived from the registration above, never restated. Which tools are
+        // gated is one fact, and the approval loop below has to agree with the
+        // agent about it — a hand-maintained second list is a bug waiting for
+        // someone to gate a sixth tool and forget.
+        var gatedTools = tools
+            .OfType<ApprovalRequiredAIFunction>()
+            .Select(tool => tool.Name)
+            .ToHashSet(StringComparer.Ordinal);
 
         AIAgent agent = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
             .GetChatClient(deployment)
             .AsAIAgent(
                 name: "ServicingAnalyst",
                 instructions: Instructions,
-                tools:
-                [
-                    AIFunctionFactory.Create(ServicingTools.GetLoanTerms),
-                    AIFunctionFactory.Create(ServicingTools.ListPackageDocuments),
-                    AIFunctionFactory.Create(ServicingTools.GetDocumentText),
-                    AIFunctionFactory.Create(ServicingTools.EvaluateCovenants),
-                    fileException
-                ]);
+                tools: tools);
 
         // A session, because the run has to survive being paused. Without it the
         // agent would lose everything it read before asking for approval, and the
         // human would be approving a filing the agent could no longer justify.
         AgentSession session = await agent.CreateSessionAsync();
 
-        ApprovalContext.CurrentApprover = Approver;
+        ApprovalContext.BeginRun(Approver);
 
         var task = $"Review the quarterly reporting package for loan {loanId}, report whether it "
                    + "is in covenant compliance, and file a servicing exception for each finding.";
@@ -159,7 +174,13 @@ public static class ServicingAgentHost
         // may batch or stagger those requests. The instructor's example handles
         // the first request in one round, which is enough to demonstrate the API
         // and not enough to run this workflow.
+        //
+        // `shown` tracks how much of the trace the operator has already been
+        // walked through, so each pause shows what the agent did since the last
+        // one rather than reprinting the whole run.
         var round = 0;
+        var shown = 0;
+
         while (true)
         {
             var approvalRequests = response.Messages
@@ -173,19 +194,26 @@ public static class ServicingAgentHost
             }
 
             round++;
+
+            // Before the question, the context for it. An operator asked to
+            // authorise a filing on the strength of its five arguments alone is
+            // being asked to trust the agent's reading of documents they have not
+            // been shown — which is ceremony, not control.
+            shown = PrintCallsSince(trace, shown, $"WHAT THE AGENT DID BEFORE ASKING (round {round})");
+
             var decisions = new List<AIContent>();
 
             foreach (var request in approvalRequests)
-            { 
+            {
                 var call = (FunctionCallContent)request.ToolCall;
-                decisions.Add(request.CreateResponse(PromptForApproval(call, round)));
+                decisions.Add(Decide(request, call, gatedTools, round));
             }
 
             response = await agent.RunAsync(new ChatMessage(ChatRole.User, decisions), session);
             CollectCalls(response, trace);
         }
 
-        PrintToolTrace(trace);
+        PrintCallsSince(trace, 0, $"TOOL TRACE — {trace.Count} call(s)");
 
         Console.WriteLine("ANSWER");
         Console.WriteLine(new string('-', 78));
@@ -193,6 +221,44 @@ public static class ServicingAgentHost
         Console.WriteLine();
 
         PrintLedger();
+    }
+
+    /// <summary>
+    /// Resolves one approval request, either automatically or by asking.
+    ///
+    /// ── The bug this exists to fix ───────────────────────────────────────────
+    ///
+    /// <c>FunctionInvokingChatClient</c>'s own remarks say it plainly: if any call
+    /// in a response is for an approval-required function, *every* call in that
+    /// response requires approval, including ones that were never gated. So a
+    /// model that batches <c>GetDocumentText</c> alongside the filing produces two
+    /// approval requests, and the old code prompted "Approve this filing?" for
+    /// both — asking a human to authorise a write that was actually a read.
+    ///
+    /// A prompt that misdescribes what it gates is worse than no prompt: it trains
+    /// the operator that the wording is noise. So a call that is not in
+    /// <paramref name="gatedTools"/> is resolved without asking, and said out loud
+    /// rather than hidden.
+    ///
+    /// The docs suggest <c>ChatOptions.AllowMultipleToolCalls = false</c> instead.
+    /// That works, and it costs a round trip per tool call for the whole run to
+    /// fix a problem that only shows up in approval rounds. Filtering here keeps
+    /// the batching.
+    /// </summary>
+    private static AIContent Decide(
+        ToolApprovalRequestContent request,
+        FunctionCallContent call,
+        IReadOnlySet<string> gatedTools,
+        int round)
+    {
+        if (!gatedTools.Contains(call.Name))
+        {
+            Console.WriteLine(
+                $"  auto-approved  {call.Name} — a read, swept into this round by tool-call batching.");
+            return request.CreateResponse(true, "Read-only tool, not approval-gated.");
+        }
+
+        return request.CreateResponse(PromptForApproval(call, round));
     }
 
     /// <summary>
@@ -223,16 +289,50 @@ public static class ServicingAgentHost
         }
 
         Console.WriteLine();
-        Console.Write("  Approve this filing? [y/N]: ");
+        Console.Write($"  Approve this {Describe(call.Name)}? [y/N]: ");
 
+        // Timed from the moment the question is on screen. Recorded on the ledger
+        // entry, because "approved by console-operator" and "approved by
+        // console-operator in 400ms" are not the same audit record, and approval
+        // fatigue is the failure mode of every HITL system ever built.
+        var started = Stopwatch.GetTimestamp();
         var input = Console.ReadLine();
+        var timeToDecision = Stopwatch.GetElapsedTime(started);
+
         var approved = string.Equals(input?.Trim(), "y", StringComparison.OrdinalIgnoreCase);
 
-        Console.WriteLine(approved ? "  APPROVED — filing." : "  REJECTED — nothing written.");
+        if (approved)
+        {
+            // Keyed to the filing this authorises, so it cannot be spent on a
+            // different one. See ApprovalContext for why that matters once a
+            // package produces more than one finding.
+            ApprovalContext.RecordApproval(
+                ArgumentAsString(call, "loanId"),
+                ArgumentAsString(call, "code"),
+                timeToDecision);
+        }
+
+        Console.WriteLine(approved
+            ? $"  APPROVED — filing. (decided in {timeToDecision.TotalSeconds:F1}s)"
+            : "  REJECTED — nothing written.");
         Console.WriteLine();
 
         return approved;
     }
+
+    /// <summary>
+    /// Wording derived from the tool rather than hardcoded, so gating a sixth tool
+    /// later cannot silently produce a prompt that describes the wrong action.
+    /// </summary>
+    private static string Describe(string toolName)
+        => toolName == nameof(ServicingTools.CreateServicingException)
+            ? "filing"
+            : $"call to {toolName}";
+
+    private static string ArgumentAsString(FunctionCallContent call, string name)
+        => call.Arguments is not null && call.Arguments.TryGetValue(name, out var value)
+            ? value?.ToString() ?? string.Empty
+            : string.Empty;
 
     /// <summary>
     /// What actually landed on the loan file, printed from the ledger rather than
@@ -260,7 +360,22 @@ public static class ServicingAgentHost
                               + $"{entry.Exception.Code}  {entry.Exception.LoanId}");
             Console.WriteLine($"    {entry.Exception.Summary}");
             Console.WriteLine($"    Evidence:    {entry.Exception.Evidence}");
-            Console.WriteLine($"    Approved by: {entry.ApprovedBy} at {entry.FiledAt:yyyy-MM-dd HH:mm:ss}Z");
+
+            var decision = entry.TimeToDecision is { } elapsed
+                ? $" (decided in {elapsed.TotalSeconds:F1}s)"
+                : string.Empty;
+
+            Console.WriteLine($"    Approved by: {entry.ApprovedBy}{decision} at {entry.FiledAt:yyyy-MM-dd HH:mm:ss}Z");
+
+            if (!entry.IsAttributed)
+            {
+                // Should be unreachable while the gate holds. Printed rather than
+                // asserted because the ledger is the record of what happened, and
+                // a write that arrived without an approval is exactly the thing
+                // the record exists to make visible.
+                Console.WriteLine("    ** no approval was recorded against this filing **");
+            }
+
             Console.WriteLine();
         }
     }
@@ -281,9 +396,17 @@ public static class ServicingAgentHost
             .OfType<FunctionCallContent>()
             .Where(call => trace.All(seen => seen.CallId != call.CallId)));
 
-    private static void PrintToolTrace(IReadOnlyList<FunctionCallContent> calls)
+    /// <summary>
+    /// Prints the calls from <paramref name="from"/> onward under
+    /// <paramref name="heading"/>, and returns the new watermark.
+    ///
+    /// Used twice, for two different jobs: incrementally before each approval
+    /// prompt, so the operator sees the reads a filing rests on, and once from
+    /// zero at the end as the record of the whole run.
+    /// </summary>
+    private static int PrintCallsSince(IReadOnlyList<FunctionCallContent> calls, int from, string heading)
     {
-        Console.WriteLine($"TOOL TRACE — {calls.Count} call(s)");
+        Console.WriteLine(heading);
         Console.WriteLine(new string('-', 78));
 
         if (calls.Count == 0)
@@ -292,21 +415,28 @@ public static class ServicingAgentHost
             Console.WriteLine("  itself — it means the answer came from the model's priors, not");
             Console.WriteLine("  from the servicing system.");
             Console.WriteLine();
-            return;
+            return 0;
         }
 
-        var index = 1;
-        foreach (var call in calls)
+        if (from >= calls.Count)
         {
+            Console.WriteLine("  (nothing new since the last prompt)");
+            Console.WriteLine();
+            return from;
+        }
+
+        for (var index = from; index < calls.Count; index++)
+        {
+            var call = calls[index];
             var arguments = call.Arguments is null or { Count: 0 }
                 ? "(none)"
                 : string.Join(", ", call.Arguments.Select(pair => $"{pair.Key}={Abbreviate(pair.Value)}"));
 
-            Console.WriteLine($"  {index,2}. {call.Name}({arguments})");
-            index++;
+            Console.WriteLine($"  {index + 1,2}. {call.Name}({arguments})");
         }
 
         Console.WriteLine();
+        return calls.Count;
     }
 
     private static string Abbreviate(object? value)

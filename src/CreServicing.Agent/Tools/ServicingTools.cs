@@ -384,9 +384,14 @@ public static class ServicingTools
                    + "is not an audit record. Nothing was filed.";
         }
 
+        // Consumed, not read: one human approval authorises exactly one filing.
+        // A null here means this write reached the ledger without a matching
+        // approval, and the ledger records that fact rather than hiding it.
+        var approval = ApprovalContext.TakeApproval(loanId, code);
+
         var entry = ExceptionLedger.File(
             new ServicingException(loanId, code, parsedSeverity, summary, evidence),
-            approvedBy: ApprovalContext.CurrentApprover ?? "unknown",
+            approval,
             filedAt: DateTimeOffset.UtcNow);
 
         return JsonSerializer.Serialize(new
@@ -399,26 +404,5 @@ public static class ServicingTools
             approvedBy = entry.ApprovedBy,
             filedAt = entry.FiledAt.ToString("yyyy-MM-dd HH:mm:ss'Z'", Us)
         }, Json);
-    }
-}
-
-/// <summary>
-/// Carries the identity of whoever approved the current tool call so the ledger
-/// can record it.
-///
-/// A shortcut, and worth naming as one: an AsyncLocal ambient value works for a
-/// console app with one operator and would need replacing with a proper scoped
-/// context in anything multi-user. What it stands in for is not optional though
-/// — "the agent filed this" is not an acceptable audit entry. A human authorised
-/// it and the file has to say who.
-/// </summary>
-public static class ApprovalContext
-{
-    private static readonly AsyncLocal<string?> Approver = new();
-
-    public static string? CurrentApprover
-    {
-        get => Approver.Value;
-        set => Approver.Value = value;
     }
 }

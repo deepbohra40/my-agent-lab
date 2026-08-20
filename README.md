@@ -88,9 +88,9 @@ dashboard `15379`/`17242`) so both can run side by side without collisions.
 dotnet test
 ```
 
-40 tests over `CovenantEngine` and `Covenants`, running in about 200ms. No Azure
-credentials, no network, no cost — everything under test is a pure function, which
-is the point rather than a convenience.
+57 tests over `CovenantEngine`, `Covenants` and the write gate, running in about
+200ms. No Azure credentials, no network, no cost — everything under test is a pure
+function, which is the point rather than a convenience.
 
 What they actually pin:
 
@@ -109,7 +109,15 @@ What they actually pin:
   Asserted against `hi-IN`, `de-DE` and `ja-JP`.
 - **Determinism**, across 50 consecutive evaluations of the same distressed loan.
 - **Every emitted code is declared in `KnownCodes`**, so the engine can never emit a
-  finding that its own write path would refuse to file.
+  finding that its own write path would refuse to file — and, from the other
+  direction, every code in that set is actually accepted by `CreateServicingException`.
+- **The write gate rejects before a human is asked.** An invented code, an
+  unparseable severity, a missing evidence string — all refused by the tool itself.
+  A gate that presents garbage to a human to approve is a worse gate.
+- **One approval authorises exactly one filing.** Approvals are keyed to loan +
+  finding code and consumed on use, so a duplicate filing cannot inherit the
+  approval a human gave the first one, and approving the DSCR breach is not
+  approving the insurance one.
 
 One test is deliberately `[Skip]`-ed: a loan *past* its maturity date currently
 produces no finding at all, because the horizon check guards with
@@ -132,12 +140,15 @@ my-agent-lab/
 │       ├── Given.cs                #   one compliant loan; each test perturbs one field
 │       ├── CovenantEngineTests.cs  #   the band edges, one tick either side
 │       ├── CovenantsTests.cs       #   the four primitives and their divide-by-zero guards
-│       └── AuditabilityTests.cs    #   the properties that justify C# over a model
+│       ├── AuditabilityTests.cs    #   the properties that justify C# over a model
+│       └── WriteGateTests.cs       #   what the one write tool refuses, and approval accounting
 └── src/
     ├── CreServicing.Agent/          # the derived project — CRE covenant compliance
     │   ├── Domain/                  #   LoanTerms, Covenants, CovenantEngine, Extractions
-    │   ├── Data/                    #   MockServicingSystem (system of record), DocumentStore
-    │   ├── Tools/                   #   ServicingTools — S6 scaffold, [Description] is the work
+    │   ├── Data/                    #   MockServicingSystem, DocumentStore, ExceptionLedger,
+    │   │                            #   ApprovalContext — who authorised which filing
+    │   ├── Agents/                  #   ServicingAgentHost — the tool loop and the HITL gate
+    │   ├── Tools/                   #   ServicingTools — four reads, one gated write
     │   └── fixtures/                #   synthetic borrower packages
     │       ├── CRE-2019-0447/       #     distressed office — four documents, four breaches
     │       ├── CRE-2021-0912/       #     healthy multifamily — must produce a CLEAN report
@@ -177,6 +188,39 @@ decide is the single clearest signal I can send about understanding these system
 
 That is also why the deterministic half runs today with no Azure call at all — the
 agent layer is the part still being built, not the part holding it up.
+
+### The human approval gate
+
+Four of the five tools are reads and one is a write, and they are not the same kind
+of thing. A bad call on `GetLoanTerms` costs a few cents. A bad call on
+`CreateServicingException` puts a false covenant breach on a borrower's file, which
+drives a notice, a reserve decision, and a conversation with a person. **The agent
+may read freely and must ask before it writes** — sort tools by blast radius, not by
+convenience. Exactly one tool is gated, deliberately: gate five and the operator
+starts clicking through, and approval fatigue is the failure mode of every
+human-in-the-loop system ever built.
+
+Four things that turned out to matter more than the gate itself:
+
+- **`ApprovalRequiredAIFunction` enforces nothing.** Its own XML doc says so — it is
+  a `DelegatingAIFunction` marker. Enforcement lives in `FunctionInvokingChatClient`,
+  which swaps the call for a `ToolApprovalRequestContent` and returns early. The host
+  loop is what resolves it; delete the loop and the agent stalls forever.
+- **Approval contaminates the whole batch.** Per the same docs: if *any* call in a
+  response needs approval, *every* call in that response does, including ungated
+  reads. The prompt used to say "Approve this filing?" over a `GetDocumentText`.
+  `ServicingAgentHost` now derives the gated set from the tool registration itself
+  and auto-resolves anything swept in — rather than taking the docs' suggestion of
+  `AllowMultipleToolCalls = false`, which fixes it by paying a round trip per tool
+  call across the entire run.
+- **The operator sees the trace before the question.** Approving a filing on the
+  strength of its five arguments alone means authorising the agent's reading of
+  documents you were never shown. Each pause now prints what the agent did since the
+  last one.
+- **The ledger records the decision, not just the role.** Every entry carries
+  time-to-decision, keyed to the specific filing it authorised. It prevents nothing
+  — a determined human can still hold down `y` — but three breaches cleared in 900ms
+  is a finding about the process, and without the field nobody could ever see it.
 
 ### Roadmap
 
