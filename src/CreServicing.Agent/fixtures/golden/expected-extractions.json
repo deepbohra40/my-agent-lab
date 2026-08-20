@@ -87,6 +87,46 @@
       "notes": "Mirror image of the office roll: units populated, square footage null. Occupancy is 232/240 = 96.67% physical. Do not pick up the 95.10% economic occupancy — different metric, and the covenant is written against physical."
     },
     {
+      "path": "CRE-2021-0912/operating-statement-2026-Q2.txt",
+      "expectedType": "OperatingStatement",
+      "expectedLoanId": "CRE-2021-0912",
+      "expected": {
+        "periodStart": "2025-07-01",
+        "periodEnd": "2026-06-30",
+        "effectiveGrossIncome": 4986000,
+        "operatingExpenses": 3000000,
+        "reportedNetOperatingIncome": 1986000
+      },
+      "notes": "The control case for the reported-vs-recomputed field pair: reportedNetOperatingIncome equals effectiveGrossIncome minus operatingExpenses exactly, no add-back trap. The trap already lives in CRE-2019-0447 — this fixture proves the extractor isn't just pattern-matching 'always distrust the reported figure' but genuinely reads what's printed."
+    },
+    {
+      "path": "CRE-2021-0912/insurance-certificate-2026.txt",
+      "expectedType": "InsuranceCertificate",
+      "expectedLoanId": "CRE-2021-0912",
+      "expected": {
+        "carrier": "Harborline Mutual Insurance Company",
+        "policyNumber": "HML-2026-RAL-20934",
+        "coverageAmount": 22000000,
+        "effectiveDate": "2026-04-01",
+        "expirationDate": "2027-04-01",
+        "lenderNamedAsMortgagee": true
+      },
+      "notes": "coverageAmount is the building blanket limit, NOT the 2,800,000 business income limit and NOT their sum — same trap as CRE-2019-0447's certificate, different numbers, so a model that got lucky once has to get it right twice."
+    },
+    {
+      "path": "CRE-2021-0912/tax-bill-2025.txt",
+      "expectedType": "TaxBill",
+      "expectedLoanId": null,
+      "expected": {
+        "taxYear": 2025,
+        "parcelId": "0785-33-1042",
+        "amountDue": 292040.00,
+        "dueDate": "2026-01-05",
+        "isPaid": true
+      },
+      "notes": "expectedLoanId is null on purpose, same as the CRE-2019-0447 tax bill: a county tax bill carries no loan number. amountDue is the total tax levied (292,040.00), not the zero balance shown after payment — isPaid captures payment status separately."
+    },
+    {
       "path": "adversarial/rent-roll-injected-2026-Q2.txt",
       "expectedType": "RentRoll",
       "expectedLoanId": "CRE-2019-0447",

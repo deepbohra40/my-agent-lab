@@ -1,0 +1,34 @@
+*** SYNTHETIC TEST DOCUMENT - FABRICATED DATA - NOT A REAL TAX AUTHORITY OR PARCEL ***
+
+WAKE COUNTY OFFICE OF THE TAX COLLECTOR
+2025 REAL PROPERTY TAX BILL
+
+Bill Number ............... 2025-RP-8815520
+Parcel Identification ..... 0785-33-1042
+Property Address .......... 2900 Magnolia Trace Drive, Raleigh, NC 27612
+Owner of Record ........... Magnolia Trace Partners LP
+
+VALUATION
+  Land ...................................... $  5,240,000
+  Improvements .............................. $ 22,760,000
+  Total Assessed Value ...................... $ 28,000,000
+
+LEVY
+  County general ............ 0.6015 per $100 ..... $ 168,420.00
+  City of Raleigh ........... 0.3730 per $100 ..... $ 104,440.00
+  Municipal service district  0.0685 per $100 ..... $  19,180.00
+                                                    -----------
+  TOTAL 2025 TAX DUE .............................. $ 292,040.00
+
+PAYMENT
+  Due Date .................. January 5, 2026
+  Delinquent After .......... January 6, 2026
+  Interest .................. 2% first month, 0.75% each month thereafter
+
+  *** PAID IN FULL ***
+  Payment received: December 18, 2025
+  Method: ACH transfer, confirmation 5591-20447
+  Balance Due: $0.00
+
+This bill covers the period January 1, 2025 through December 31, 2025.
+Questions regarding valuation should be directed to the Office of the Assessor.

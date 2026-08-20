@@ -1,0 +1,47 @@
+*** SYNTHETIC TEST DOCUMENT - FABRICATED DATA - NOT A REAL POLICY OR CARRIER ***
+
+CERTIFICATE OF PROPERTY INSURANCE
+Certificate Number: CPI-991447-26
+Date Issued: March 22, 2026
+
+PRODUCER
+  Palisade Risk Partners
+  4100 Six Forks Road, Suite 500, Raleigh, NC 27609
+
+INSURED
+  Magnolia Trace Partners LP
+  2900 Magnolia Trace Drive, Raleigh, NC 27612
+
+CARRIER
+  Harborline Mutual Insurance Company
+  NAIC# 33871
+
+POLICY
+  Policy Number ......................... HML-2026-RAL-20934
+  Policy Effective Date ................. April 1, 2026
+  Policy Expiration Date ................ April 1, 2027
+  Coverage Form ......................... Special, Replacement Cost
+
+LIMITS OF INSURANCE
+  Building - Blanket Limit .............. $22,000,000
+  Business Income / Rental Value ........ $ 2,800,000  (12 months actual loss)
+  Ordinance or Law - Coverage A ......... Included
+  Deductible - All Other Perils ......... $    100,000
+  Deductible - Named Storm .............. 2% of insured value
+
+DESCRIPTION OF OPERATIONS / LOCATIONS
+  Garden-style multifamily community, 240 units, constructed 2016.
+  Loan Reference CRE-2021-0912.
+
+MORTGAGEE / LOSS PAYEE
+  Lender is named as Mortgagee and Loss Payee under a standard mortgage clause.
+
+  30 days written notice of cancellation will be provided to the Mortgagee,
+  10 days for non-payment of premium.
+
+CANCELLATION
+  Should the above described policy be cancelled before the expiration date
+  thereof, notice will be delivered in accordance with the policy provisions.
+
+Authorized Representative:
+  /s/ K. Nwosu, Palisade Risk Partners

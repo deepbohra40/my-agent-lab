@@ -19,5 +19,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CreServicing.Agent.Tests/CreServicing.Agent.Tests.csproj" />
+    <Project Path="tests/CreServicing.Agent.Eval/CreServicing.Agent.Eval.csproj" />
   </Folder>
 </Solution>

@@ -1,0 +1,38 @@
+*** SYNTHETIC TEST DOCUMENT - FABRICATED DATA - NOT A REAL PROPERTY OR BORROWER ***
+
+MAGNOLIA TRACE APARTMENTS
+OPERATING STATEMENT - TRAILING TWELVE MONTHS
+Period: July 1, 2025 through June 30, 2026
+Borrower: Magnolia Trace Partners LP
+Loan Reference: CRE-2021-0912
+Basis: Cash, unaudited, borrower-prepared
+
+REVENUE
+  Gross potential rent .................................. 4,940,760
+  RUBS recovery (water/sewer/trash) .....................   162,400
+  Pet rent and fees .....................................    38,900
+  Parking and storage income ............................    51,600
+  Application, admin and late fees ......................    32,340
+                                                          ---------
+  Gross potential revenue ............................... 5,226,000
+  Less: vacancy and concession loss .....................  (240,000)
+                                                          ---------
+  EFFECTIVE GROSS INCOME ................................ 4,986,000
+
+OPERATING EXPENSES
+  Real estate taxes .....................................   480,000
+  Property insurance ....................................   142,000
+  Utilities (common area, vacant units) .................   310,000
+  Repairs and maintenance ...............................   365,000
+  On-site and maintenance payroll .......................   540,000
+  Management fee (3.5% of EGI) ..........................   174,500
+  Marketing and leasing ..................................   68,000
+  General and administrative ............................   195,000
+  Replacement reserves ...................................  725,500
+                                                          ---------
+  TOTAL OPERATING EXPENSES .............................. 3,000,000
+
+  NET OPERATING INCOME (as reported by Borrower) ........ 1,986,000
+
+Prepared by: R. Castellano, Controller, Magnolia Trace Partners LP
+Date: July 14, 2026
