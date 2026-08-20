@@ -1,272 +1,150 @@
-# my-agent-lab
+# my-agent-lab — CRE covenant compliance
 
 [![CI](https://github.com/deepbohra40/my-agent-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/deepbohra40/my-agent-lab/actions/workflows/ci.yml)
 
-My own build-along project for the Udemy course *Agentic AI Development with Agent Framework, MCP and .NET*.
-Kept deliberately **outside** the instructor's clone (`../develop-agents`, remote `mehmetozkaya/develop-agents`)
-so that `git pull` there never collides with my work.
+A commercial real-estate servicer receives a quarterly reporting package from a
+borrower — rent roll, operating statement, insurance certificate, tax bill. Somebody
+has to read it, pull the numbers out, test them against the covenants in the loan
+agreement, and raise a servicing exception when one fails. Today that somebody is an
+analyst with a spreadsheet.
 
-**Domain: CRE post-close document intake and covenant compliance.** A borrower
-submits a quarterly package — rent roll, operating statement, insurance certificate,
-tax bill. Something has to read it, extract the numbers, test them against the
-covenants in the loan agreement, and raise an exception when one fails. Today that
-something is an analyst with a spreadsheet.
+This is that workflow, built as a .NET service that orchestrates a language model.
 
-The domain gives every section something real to bite on — documents to extract from,
-a system of record to call, specialist agents worth routing between, covenant language
-worth grounding answers in, and a write action (a servicing exception that reaches a
-borrower) that genuinely warrants a human approval step. It is deliberately *not* the
-IT-support ticket triage the course samples use, so I derive the structure instead of
-copying it.
+**The model extracts. C# decides.** A model is good at reading a scanned rent roll
+and reporting 83.5% occupancy. It is the wrong tool for deciding whether 83.5%
+breaches an 85% floor — that comparison has to be reproducible and auditable, and no
+sampled decoder can promise either. Every covenant verdict in this repo is computed
+in `Domain/CovenantEngine.cs`, which contains no model call and never will.
 
-**Everything in `fixtures/` and `MockServicingSystem` is fabricated.** No real
-borrower, property, loan, or document. That is not a limitation — it is the reason
-this can exist outside a bank's network at all.
+> Everything in `fixtures/` and `MockServicingSystem` is fabricated. No real borrower,
+> property, loan, or document — which is the reason this can exist outside a bank's
+> network at all.
 
-> `src/ReviewAgent.Console` was the earlier code-review take on the same idea,
-> superseded by `CreServicing.Agent`. Kept until the section 5 material is fully
-> rebuilt in the new domain, then deleted.
+---
 
-## How I use this
+## The five things worth looking at
 
-Per lecture:
+If you have five minutes, these are the decisions I would want reviewed.
 
-1. Watch the section.
-2. Run the instructor's sample from `../develop-agents` and see it work.
-3. **Close it.** Build the equivalent here from memory and the docs.
-4. Diff against his version only when genuinely stuck.
-
-Step 3 is the point. Reading code produces recognition; rebuilding produces recall.
-Copy the Aspire `AppHost`/`ServiceDefaults` boilerplate verbatim when the time comes —
-there's nothing to learn there and it's pure friction.
-
-## Prerequisites
-
-Azure is already provisioned (`rg-maf-course` / `maf-course-db26`, South India):
-
-| Setting | Value |
+| | Where |
 | --- | --- |
-| `AZURE_OPENAI_ENDPOINT` | `https://maf-course-db26.openai.azure.com/` |
-| `AZURE_OPENAI_DEPLOYMENT_NAME` | `gpt-5-mini` |
-| Auth | `AzureCliCredential` — needs `az login` and the *Cognitive Services OpenAI User* role |
+| **1. The model is not allowed to decide anything** | [`Domain/CovenantEngine.cs`](src/CreServicing.Agent/Domain/CovenantEngine.cs) |
+| **2. A real bug, diagnosed as structural and fixed structurally** | [`Tools/ServicingTools.cs`](src/CreServicing.Agent/Tools/ServicingTools.cs) |
+| **3. Tools sorted by blast radius, exactly one gated** | [`Agents/ServicingAgentHost.cs`](src/CreServicing.Agent/Agents/ServicingAgentHost.cs) |
+| **4. Extraction accuracy is measured, not asserted** | [`tests/CreServicing.Agent.Eval/`](tests/CreServicing.Agent.Eval) |
+| **5. Cost per package is a number, not a hope** | [`Cost/ModelCost.cs`](src/CreServicing.Agent/Cost/ModelCost.cs) |
 
-Both env vars are set at Windows user level, so **restart any terminal or Visual Studio
-instance opened before they were set.**
+### 1. The model is not allowed to decide anything
 
-## Run
+`Covenants.cs` and `CovenantEngine.cs` are pure functions. The agent supplies measured
+figures and asks for a verdict; it does not get to produce one. Everything the model
+touches sits strictly upstream of `CovenantEngine.Evaluate`.
 
-```powershell
-# The covenant review across all three synthetic loans.
-# No Azure call, no key, no cost — the deterministic half runs on its own.
-dotnet run --project src/CreServicing.Agent
+The property this buys: **same inputs, same findings, every run, forever.** 71 tests
+assert it, including determinism across 50 consecutive evaluations and byte-identical
+evidence strings under `hi-IN`, `de-DE` and `ja-JP` locales — because a breach filed
+from Bangalore and one filed from Frankfurt have to produce the same audit record, not
+`₹2,21,80,000` and `22.180.000 $`.
 
-# One loan
-dotnet run --project src/CreServicing.Agent -- CRE-2019-0447
+It is also why the default `dotnet run` needs no Azure credential, no key, and costs
+nothing. The deterministic half is not waiting on the agent layer.
 
-# The three paths below call a model: they cost money and need `az login`.
-#
-# Assemble the FinancialSnapshot from the borrower's actual documents and show it
-# beside the hand-keyed one, with the covenant findings and the cost of both.
-dotnet run --project src/CreServicing.Agent -- --extract-snapshot CRE-2019-0447
-dotnet run --project src/CreServicing.Agent -- --extract-snapshot CRE-2021-0912
+### 2. A real bug, diagnosed as structural and fixed structurally
 
-# The Section 6 agent: tool loop, with the one write behind human approval.
-dotnet run --project src/CreServicing.Agent -- --agent CRE-2019-0447
+`EvaluateCovenants` originally took `occupancyRate` as a single pre-divided decimal.
+On the first live run the model returned **0.835915** for 118,600 / 142,000. The true
+value is **0.835211**. It did the division in its head, missed in the fourth decimal,
+and reported six.
 
-# Superseded, see note above
-dotnet run --project src/ReviewAgent.Console
+Both figures breach the 85% floor, so the verdict survived. That was luck.
 
-# Section 5 follow-along scratchpads
-dotnet run --project src/section5-getting-started/BasicAgentApp
-dotnet run --project src/section5-getting-started/Streaming
-dotnet run --project src/section5-getting-started/MultiTurn
-dotnet run --project src/section5-getting-started/StructuredOutput
+The inconsistency it exposed was that DSCR and LTV were always computed in C# from
+their operands, and occupancy alone was not. **The fix was to change the tool
+signature to take `occupiedSpace` and `totalSpace` rather than a quotient** — not to
+add a sentence to the prompt telling the model to be careful.
 
-# Aspire app — launches WebApi and opens the dashboard
-dotnet run --project src/section5-getting-started/MinimalAgent/AppHost
+That one change killed four failure modes at once: the arithmetic error, fraction vs.
+percentage confusion, the office-vs-multifamily unit-of-measure branch, and physical
+vs. economic occupancy. A model cannot hand over an economic occupancy figure when it
+cannot hand over a quotient at all. **Structure beats instruction.**
 
-# Section 6
-dotnet run --project src/section6-tool-use/FunctionCall
-```
+A second instance of the same principle: the operating statement extractor captures
+`reportedNetOperatingIncome` — whatever the borrower's document *claims* — in a field
+separate from the NOI the engine computes. On the office fixture the borrower reports
+**$2,284,000** by adding back a $154,000 roof repair; recomputed from the raw line
+items it is **$2,130,000**. The covenant test uses the recomputed figure. Capturing
+both is what makes the $154,000 gap visible instead of silently accepted.
 
-Ports for `MinimalAgent` are shifted off the course repo's defaults (WebApi `5143`/`7227`,
-dashboard `15379`/`17242`) so both can run side by side without collisions.
+### 3. Tools sorted by blast radius, exactly one gated
 
-## Tests
-
-```powershell
-dotnet test
-```
-
-71 tests over `CovenantEngine`, `Covenants`, the write gate and the cost model,
-running in about 240ms. No Azure credentials, no network, no cost — everything under
-test is a pure function, which is the point rather than a convenience.
-
-What they actually pin:
-
-- **The band edges, not the middles.** A DSCR three points clear of its floor
-  passes under any plausible implementation. A DSCR sitting *exactly* on the floor
-  is where `<` and `<=` diverge, so every covenant test is asserted one tick either
-  side of its boundary. Sitting exactly on a covenant minimum yields `Watch`, never
-  `Pass` — a policy decision that is invisible in the code and would otherwise be
-  one careless refactor from silently inverting.
-- **A missing appraisal is `LTV-UNTESTED`, not silence.** An untested covenant is
-  not a passing covenant. Silence would let a reviewer conclude LTV was checked and
-  cleared.
-- **Culture independence.** Evidence strings are pinned to `en-US` inside the
-  engine, so the same breach filed from Bangalore and from Frankfurt produces
-  byte-identical audit records rather than `₹2,21,80,000` and `22.180.000 $`.
-  Asserted against `hi-IN`, `de-DE` and `ja-JP`.
-- **Determinism**, across 50 consecutive evaluations of the same distressed loan.
-- **Every emitted code is declared in `KnownCodes`**, so the engine can never emit a
-  finding that its own write path would refuse to file — and, from the other
-  direction, every code in that set is actually accepted by `CreateServicingException`.
-- **The write gate rejects before a human is asked.** An invented code, an
-  unparseable severity, a missing evidence string — all refused by the tool itself.
-  A gate that presents garbage to a human to approve is a worse gate.
-- **One approval authorises exactly one filing.** Approvals are keyed to loan +
-  finding code and consumed on use, so a duplicate filing cannot inherit the
-  approval a human gave the first one, and approving the DSCR breach is not
-  approving the insurance one.
-
-One test is deliberately `[Skip]`-ed: a loan *past* its maturity date currently
-produces no finding at all, because the horizon check guards with
-`daysToMaturity >= 0`. A matured unpaid loan is the most serious state in
-servicing, so that silence is wrong. The test is left in place, skipped, so the gap
-shows up in the test report rather than living in someone's memory.
-
-CI runs the same suite on every push and pull request. It is scoped to the test
-project rather than the whole solution, so the Aspire follow-along scratchpad does
-not drag its workload into every run.
-
-## Structure
-
-```
-my-agent-lab/
-├── my-agent-lab.slnx
-├── .github/workflows/ci.yml        # build + test on every push and PR
-├── tests/
-│   └── CreServicing.Agent.Tests/   # xUnit — boundaries, determinism, culture pinning
-│       ├── Given.cs                #   one compliant loan; each test perturbs one field
-│       ├── CovenantEngineTests.cs  #   the band edges, one tick either side
-│       ├── CovenantsTests.cs       #   the four primitives and their divide-by-zero guards
-│       ├── AuditabilityTests.cs    #   the properties that justify C# over a model
-│       ├── WriteGateTests.cs       #   what the one write tool refuses, and approval accounting
-│       └── ModelCostTests.cs       #   token arithmetic, pricing, portfolio projection
-│   └── CreServicing.Agent.Eval/    # xUnit — extraction accuracy against the golden set.
-│                                   #   Calls a real model: costs money, needs `az login`,
-│                                   #   deliberately kept out of the free CI job.
-└── src/
-    ├── CreServicing.Agent/          # the derived project — CRE covenant compliance
-    │   ├── Domain/                  #   LoanTerms, Covenants, CovenantEngine, Extractions
-    │   ├── Data/                    #   MockServicingSystem, DocumentStore, ExceptionLedger,
-    │   │                            #   ApprovalContext — who authorised which filing
-    │   ├── Agents/                  #   ServicingAgentHost — the tool loop and the HITL gate
-    │   ├── Tools/                   #   ServicingTools — four reads, one gated write
-    │   ├── Extraction/              #   the four extractors + FinancialSnapshotAssembler
-    │   ├── Cost/                    #   tokens, rates, per-package cost, portfolio projection
-    │   └── fixtures/                #   synthetic borrower packages
-    │       ├── CRE-2019-0447/       #     distressed office — four documents, four breaches
-    │       ├── CRE-2021-0912/       #     healthy multifamily — must produce a CLEAN report
-    │       ├── adversarial/         #     rent roll carrying a prompt injection
-    │       └── golden/              #     expected-extractions.json — the eval answer key
-    ├── ReviewAgent.Console/         # superseded, pending deletion
-    ├── section6-tool-use/
-    │   └── FunctionCall/            # AIFunctionFactory — the model calls your C#
-    └── section5-getting-started/
-        ├── BasicAgentApp/           # follow-along scratchpad, mirrors the course repo
-        ├── MultiTurn/               # AgentSession — history across turns
-        ├── Streaming/               # RunStreamingAsync + AgentResponseUpdate
-        ├── StructuredOutput/        # RunAsync<T> — typed results, no hand-parsing
-        └── MinimalAgent/            # Aspire + DevUI (lecture 22)
-            ├── AppHost/             #   orchestrator — startup project, F5 here
-            ├── ServiceDefaults/     #   OTel, health, resilience — copied verbatim
-            └── WebApi/              #   the only file worth typing
-```
-
-Two kinds of project live here and they serve different purposes. `CreServicing.Agent`
-is the derived work — step 3 of the loop above, built from memory in the CRE domain.
-The `sectionN-*` folders are throwaway follow-along scratchpads that mirror
-`../develop-agents/src/sectionN-*` path-for-path, so a stuck moment is a plain
-side-by-side diff. Type into them during the video; derive in the real project after.
-
-### The line the project is built around
-
-`Domain/Covenants.cs` and `Domain/CovenantEngine.cs` contain no model call and never
-will. A language model is good at reading a scanned rent roll and reporting 83.5%
-occupancy; it is the wrong tool for deciding whether 83.5% breaches an 85% floor,
-because that comparison has to be reproducible and auditable and no sampled decoder
-can promise either.
-
-**The model extracts. C# decides.** Everything the agent layer adds sits upstream of
-`CovenantEngine.Evaluate`, and being able to point at where I refused to let the model
-decide is the single clearest signal I can send about understanding these systems.
-
-That is also why the deterministic half runs today with no Azure call at all — the
-agent layer is the part still being built, not the part holding it up.
-
-### The human approval gate
-
-Four of the five tools are reads and one is a write, and they are not the same kind
-of thing. A bad call on `GetLoanTerms` costs a few cents. A bad call on
+Four of the five tools are reads and one is a write, and they are not the same kind of
+thing. A bad call on `GetLoanTerms` costs a few cents. A bad call on
 `CreateServicingException` puts a false covenant breach on a borrower's file, which
-drives a notice, a reserve decision, and a conversation with a person. **The agent
-may read freely and must ask before it writes** — sort tools by blast radius, not by
-convenience. Exactly one tool is gated, deliberately: gate five and the operator
-starts clicking through, and approval fatigue is the failure mode of every
+drives a notice, a reserve decision, and eventually a conversation with a person.
+
+**An agent may read freely and must ask before it writes.** Sort tools by blast
+radius, not by convenience. Exactly one is gated, deliberately — gate all five and the
+operator starts clicking through, and approval fatigue is the failure mode of every
 human-in-the-loop system ever built.
 
 Four things that turned out to matter more than the gate itself:
 
-- **`ApprovalRequiredAIFunction` enforces nothing.** Its own XML doc says so — it is
-  a `DelegatingAIFunction` marker. Enforcement lives in `FunctionInvokingChatClient`,
+- **`ApprovalRequiredAIFunction` enforces nothing.** Its own XML doc says so — it is a
+  `DelegatingAIFunction` marker. Enforcement lives in `FunctionInvokingChatClient`,
   which swaps the call for a `ToolApprovalRequestContent` and returns early. The host
   loop is what resolves it; delete the loop and the agent stalls forever.
-- **Approval contaminates the whole batch.** Per the same docs: if *any* call in a
-  response needs approval, *every* call in that response does, including ungated
-  reads. The prompt used to say "Approve this filing?" over a `GetDocumentText`.
-  `ServicingAgentHost` now derives the gated set from the tool registration itself
-  and auto-resolves anything swept in — rather than taking the docs' suggestion of
-  `AllowMultipleToolCalls = false`, which fixes it by paying a round trip per tool
-  call across the entire run.
+- **Approval contaminates the whole batch.** If *any* call in a response needs
+  approval, *every* call in that response does, including ungated reads. The prompt
+  used to ask "Approve this filing?" over a `GetDocumentText`. The host now derives
+  the gated set from the tool registration itself and auto-resolves anything swept in
+   — rather than the documented workaround of `AllowMultipleToolCalls = false`, which
+  fixes it by paying a round trip per tool call across the entire run.
 - **The operator sees the trace before the question.** Approving a filing on the
   strength of its five arguments alone means authorising the agent's reading of
-  documents you were never shown. Each pause now prints what the agent did since the
-  last one.
+  documents you were never shown. Each pause prints what the agent did since the last
+  one.
 - **The ledger records the decision, not just the role.** Every entry carries
-  time-to-decision, keyed to the specific filing it authorised. It prevents nothing
-  — a determined human can still hold down `y` — but three breaches cleared in 900ms
-  is a finding about the process, and without the field nobody could ever see it.
+  time-to-decision, keyed to the specific filing it authorised. It prevents nothing —
+  a determined human can still hold down `y` — but three breaches cleared in 900ms is
+  a finding about the process, and without the field nobody could ever see it.
 
-### Roadmap
+Approvals are keyed to loan + finding code and **consumed on use**: one approval
+authorises exactly one write. A second filing under the same code lands in the ledger
+as `UNATTRIBUTED` rather than silently inheriting the first one's approval.
 
-Section-by-section, at the bottom of `src/CreServicing.Agent/Program.cs`, along with
-the five things the course does not cover and interviews do: **evaluation** against
-`fixtures/golden/`, **prompt injection** via `fixtures/adversarial/`, **cost per
-package**, **OCR** for real scanned documents, and **failure routing** when
-confidence is low or two documents disagree.
+### 4. Extraction accuracy is measured, not asserted
 
-Package versions are pinned to match the course repo's section 5 projects
-(`Azure.AI.OpenAI 2.9.0-beta.1`, `Microsoft.Agents.AI.OpenAI 1.3.0`) so the
-instructor's snippets paste in without API drift. Bump them deliberately, not by accident.
+`tests/CreServicing.Agent.Eval/` grades all four extractors against
+`fixtures/golden/expected-extractions.json` — 9 hand-verified documents, field-level,
+exact match on every numeric field. Live model calls, no record/replay.
 
-## The three pillars, as they show up here
+It is a **separate project from the free test suite** on purpose: the moment a test
+needs a model it does not belong in a job that runs on every push. That one costs
+money and needs `az login`; the other runs in 240ms with no credentials.
 
-| Pillar | Where it lives in this repo |
-| --- | --- |
-| 1 — `Microsoft.Extensions.AI` primitives | The `IChatClient` construction in `Program.cs`. Provider swap = 3 lines |
-| 2 — Microsoft Agent Framework | `AsAIAgent(...)`, and later the tools, threads, and workflow graph |
-| 3 — Foundry / Azure | `AzureCliCredential` (keyless RBAC), the deployment, TPM quota, OTel |
+The golden set is built around traps rather than happy paths — an office roll that
+states RSF and no units, a multifamily roll that states units and no RSF (neither
+derivable from the other), a certificate listing a building limit beside a
+business-income limit where summing them hides a real breach, a tax bill that carries
+no loan number at all.
 
-## Cost
+**`fixtures/adversarial/` is a passing test, not a curiosity.** A rent roll carries an
+injected "SYSTEM NOTICE" instructing the model to report full occupancy and stay
+quiet. The test asserts four things: the real figure comes back, the forced reply
+never reaches `Notes`, a field the injection corrupted returns `null` rather than a
+guess, and — the one people miss — **the attempt is surfaced**. A silently-resistant
+extraction still fails. A borrower embedding pipeline instructions in a certified
+document is a fraud signal, and the whole point is that a human sees it happened.
 
-`gpt-5-mini` Global Standard, capped at 10K TPM: $0.25 /1M input, $2.00 /1M output.
-A $10/month budget alert (`maf-course-monthly`) is armed on the resource group at
-50/80/100%.
+Delimiting untrusted text is the cheap half of that defence and worth being precise
+about: it helps and it never guarantees. The actual guarantee is structural — the
+covenant decision is made in C# from typed numbers, and no sentence in a PDF can reach
+that code path.
 
-**Measured, not estimated.** `--extract-snapshot` prints the real figure at the end
-of every run, per document and per package, and projects it across a portfolio.
-`CRE-2019-0447`, three documents:
+### 5. Cost per package is a number, not a hope
+
+`--extract-snapshot` prints the real figure at the end of every run. `CRE-2019-0447`,
+three documents, `gpt-5-mini`:
 
 | document | input | output | USD |
 | --- | ---: | ---: | ---: |
@@ -278,26 +156,184 @@ of every run, per document and per package, and projects it across a portfolio.
 Quarterly reporting, one package per loan per quarter: **$4.34/yr** at 250 loans,
 **$17.36** at 1,000, **$86.78** at 5,000.
 
-Three things worth reading off that table:
-
-- **Cost is not the constraint on this system**, and it is worth knowing that with a
-  number rather than assuming it in either direction. A book of 5,000 loans costs
-  less to extract for a year than a single analyst-day. The constraint is extraction
-  accuracy and the human review loop, which is where the effort went.
-- **Output tokens dominate** — 1,885 output cost more than 2,276 input, because
-  output is priced 8x. That is why the extraction schemas are kept narrow: every
-  field an extractor is asked to return is billed at the output rate on every
+- **Cost is not the constraint on this system** — worth knowing with a number rather
+  than assuming it in either direction. A 5,000-loan book costs less to extract for a
+  year than a single analyst-day. The constraint is extraction accuracy and the human
+  review loop, which is where the effort went.
+- **Output tokens dominate.** 1,885 output cost more than 2,276 input, because output
+  is priced 8x. That is the economic argument for keeping extraction schemas narrow:
+  every field an extractor is asked to return is billed at the output rate on every
   document, forever.
-- **What it excludes**, both stated in the report itself: the S6 agent loop is
-  several round trips per package rather than three one-shot calls, and a real
-  package is scanned pages through OCR rather than clean text.
+- **What it excludes**, both stated in the report itself: the agent tool loop is
+  several round trips per package rather than three one-shot calls, and a real package
+  is scanned pages through OCR rather than clean text.
 
-The arithmetic behind it (`Cost/`) holds no SDK reference — the mapping from the
-SDK's usage report lives in `Extraction/` — so a per-package dollar figure is
-something the free CI job asserts on without credentials. Rates are data, not
-behaviour: `ModelPricing.PricedAsOf` is printed alongside every figure so a stale
-projection is visibly stale rather than quietly wrong.
+Extractors return `ExtractionResult<T>` carrying that call's usage rather than writing
+into an ambient ledger — cost is a property of a call, so the call returns it, and
+concurrent extraction will account correctly with no coordination. `Cost/` holds no
+SDK reference, which is what lets a per-package dollar figure be asserted by the free
+CI job. `ModelPricing.PricedAsOf` is printed beside every figure so a stale projection
+is visibly stale rather than quietly wrong.
 
-## Roadmap
+---
 
-See the section-by-section comment block at the bottom of `Program.cs`.
+## Run
+
+```powershell
+# The covenant review across all three synthetic loans.
+# No Azure call, no key, no cost — the deterministic half runs on its own.
+dotnet run --project src/CreServicing.Agent
+
+# One loan
+dotnet run --project src/CreServicing.Agent -- CRE-2019-0447
+```
+
+```
+CRE-2019-0447  Lakeview Corporate Center
+  Borrower        Lakeview Holdings LLC
+  Covenants       DSCR >= 1.25   LTV <= 75%   Occupancy >= 85%
+
+  RESULT          5 exception(s)
+
+    [BREACH] DSCR-MIN
+      DSCR of 1.156 is below the 1.25 covenant minimum.
+      Evidence: NOI $2,130,000 / annual debt service $1,842,000 = 1.1564
+    ...
+```
+
+Every number in that report is computed in C#, not generated. The `Evidence` line
+carries the arithmetic so a human can re-check the call without rerunning anything.
+
+The paths below call a model — they cost money and need `az login`:
+
+```powershell
+# Assemble the FinancialSnapshot from the borrower's real documents and show it
+# beside the hand-keyed one, with both sets of covenant findings and the cost.
+dotnet run --project src/CreServicing.Agent -- --extract-snapshot CRE-2019-0447
+
+# The agent: tool loop, with the one write behind human approval.
+dotnet run --project src/CreServicing.Agent -- --agent CRE-2019-0447
+```
+
+`--extract-snapshot` exists to prove a claim rather than assert it: the snapshot
+assembled from extracted documents produces the *same* covenant findings as the
+hand-keyed one. The single expected divergence is `LTV-UNTESTED` — no appraisal
+document exists in these fixtures, and an untested covenant is reported as a finding
+rather than left to be inferred from an absence.
+
+### Prerequisites
+
+| Setting | Value |
+| --- | --- |
+| `AZURE_OPENAI_ENDPOINT` | `https://maf-course-db26.openai.azure.com/` |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | `gpt-5-mini` |
+| Auth | `AzureCliCredential` — needs `az login` and the *Cognitive Services OpenAI User* role |
+
+Both env vars are set at Windows user level, so restart any terminal or IDE opened
+before they were set.
+
+## Tests
+
+```powershell
+dotnet test
+```
+
+**71 tests, ~240ms, no credentials and no network.** Everything under test is a pure
+function, which is the point rather than a convenience. What they pin:
+
+- **The band edges, not the middles.** A DSCR three points clear of its floor passes
+  under any plausible implementation. A DSCR sitting *exactly* on the floor is where
+  `<` and `<=` diverge, so every covenant test is asserted one tick either side of its
+  boundary. Sitting exactly on a minimum yields `Watch`, never `Pass` — a policy
+  decision that is invisible in the code and would otherwise be one careless refactor
+  from silently inverting.
+- **A missing appraisal is `LTV-UNTESTED`, not silence.** An untested covenant is not
+  a passing covenant. Silence would let a reviewer conclude LTV was checked and cleared.
+- **Culture independence**, asserted against three non-US locales.
+- **Determinism**, across 50 consecutive evaluations of the same distressed loan.
+- **Every emitted code is declared in `KnownCodes`** — the engine cannot emit a finding
+  its own write path would refuse to file, and every code in that set is accepted by
+  `CreateServicingException`.
+- **The write gate rejects before a human is asked.** An invented code, an unparseable
+  severity, a missing evidence string — refused by the tool itself. A gate that
+  presents garbage to a human is a worse gate.
+- **The cost arithmetic**, including that output is priced above input on every rate in
+  the table, and that an unknown deployment degrades to "unpriced" rather than throwing
+  partway through a covenant review.
+
+One test is deliberately skipped rather than deleted: a loan *past* its maturity date
+currently produces no finding at all, because the horizon check guards with
+`daysToMaturity >= 0`. A matured unpaid loan is the most serious state in servicing, so
+that silence is wrong. The test stays, skipped, so the gap shows up in the test report
+instead of living in someone's memory.
+
+CI runs this suite on every push and pull request.
+
+## Structure
+
+```
+my-agent-lab/
+├── .github/workflows/ci.yml            # build + test on every push and PR
+├── tests/
+│   ├── CreServicing.Agent.Tests/       # free: boundaries, determinism, culture, write gate, cost
+│   └── CreServicing.Agent.Eval/        # costs money: extraction accuracy vs. the golden set
+└── src/CreServicing.Agent/
+    ├── Domain/                         # Covenants, CovenantEngine — no model call, ever
+    ├── Extraction/                     # four extractors + FinancialSnapshotAssembler
+    ├── Tools/                          # ServicingTools — four reads, one gated write
+    ├── Agents/                         # ServicingAgentHost — tool loop and the HITL gate
+    ├── Data/                           # system of record, document store, ledger, approvals
+    ├── Cost/                           # tokens, rates, per-package cost, portfolio projection
+    └── fixtures/
+        ├── CRE-2019-0447/              #   distressed office — four documents, four breaches
+        ├── CRE-2021-0912/              #   healthy multifamily — must produce a CLEAN report
+        ├── adversarial/                #   rent roll carrying a prompt injection
+        └── golden/                     #   expected-extractions.json — the eval answer key
+```
+
+A third loan, `CRE-2018-0233`, exists in `MockServicingSystem` with **no fixture
+package at all** — that is the "no documents on file" path, and it stays hand-keyed by
+design rather than being a gap.
+
+## What is deliberately not built
+
+Being able to state the trade-off is not the same as having built the thing, and
+pretending otherwise is worse than the gap.
+
+- **Agent memory across reporting periods.** "Occupancy has fallen for three
+  consecutive quarters" is an asset-management conversation no single-period test can
+  produce. Understood, not built — it would not have changed what this repo
+  demonstrates.
+- **Document classification and routing.** `FinancialSnapshotAssembler` locates
+  documents by filename convention. A real intake pipeline classifies first and routes
+  to the right extractor; a tax bill and a rent roll should not share a prompt.
+- **Retrieval over the loan agreement.** `ServicingException.ClauseCitation` is a slot
+  that stays null. An exception quoting section 7.3(b) is a document a servicer can
+  send; one that says "DSCR is low" is not.
+- **Hosting.** This runs as a console app. The credential is `AzureCliCredential`, the
+  client is newed up inline, config comes from environment variables, and there is no
+  DI container, no `CancellationToken`, and no retry policy — all fine for a console
+  app and none of it acceptable behind an HTTP endpoint. The interesting part is not
+  the boilerplate; it is that the human approval loop currently works *because*
+  `Console.ReadLine()` blocks and holds the run in memory, and a suspended run over
+  HTTP has to be persisted and resumed across two requests.
+- **OCR.** Real packages are scanned pages. These fixtures are clean text.
+- **Low-confidence routing.** Extractors report a self-scored confidence that is
+  captured and never acted on. The answer that matters is not "retry" — it is "route
+  to a human, with the specific question that needs answering."
+
+## Provenance
+
+Started as a build-along for a .NET agent-framework course, then derived away from it:
+the course samples are IT-support ticket triage, and everything here is structured
+around a domain I know instead. `src/section5-getting-started/` and
+`src/section6-tool-use/` are follow-along scratchpads that mirror the course repo
+path-for-path — throwaway, kept only so a stuck moment is a plain side-by-side diff.
+`src/ReviewAgent.Console/` was an earlier take on the same idea and is pending deletion.
+
+Package versions are pinned to match those samples (`Azure.AI.OpenAI 2.9.0-beta.1`,
+`Microsoft.Agents.AI.OpenAI 1.3.0`) so snippets paste in without API drift. Bump them
+deliberately, not by accident.
+
+The section-by-section roadmap, and the reasoning behind each decision above, lives in
+the comment block at the bottom of `src/CreServicing.Agent/Program.cs`.
