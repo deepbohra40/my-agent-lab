@@ -156,20 +156,34 @@ three documents, `gpt-5-mini`:
 Quarterly reporting, one package per loan per quarter: **$4.34/yr** at 250 loans,
 **$17.36** at 1,000, **$86.78** at 5,000.
 
+`--agent` prints its own figure on the same terms, so the fixed pipeline and the tool
+loop over the **same package** are directly comparable rather than one being assumed
+cheaper. They turn out to have inverted cost profiles:
+
+| | pipeline, 3 one-shot calls | agent, 6 round trips |
+| --- | ---: | ---: |
+| input tokens | 2,276 | **44,814** |
+| output tokens | 1,885 | 3,039 |
+| input cost | $0.00057 (13%) | **$0.01120 (65%)** |
+| output cost | $0.00377 (**87%**) | $0.00608 (35%) |
+| **per review** | **$0.004339** | **$0.017282** |
+| at 5,000 loans/yr | $86.78 | $345.63 |
+
 - **Cost is not the constraint on this system** — worth knowing with a number rather
-  than assuming it in either direction. A 5,000-loan book costs less to extract for a
-  year than a single analyst-day. The constraint is extraction accuracy and the human
-  review loop, which is where the effort went.
-- **Output tokens dominate.** 1,885 output cost more than 2,276 input, because output
-  is priced 8x. That is the economic argument for keeping extraction schemas narrow:
-  every field an extractor is asked to return is billed at the output rate on every
-  document, forever.
-- **The agent path is measured too, separately.** `--agent` prints its own figure on
-  the same terms, so the fixed three-call pipeline and the tool loop over the *same*
-  package are directly comparable rather than one being assumed cheaper. Every
-  approval round replays the whole conversation, so the input side grows with the
-  number of findings rather than with the size of the package — that is the price of
-  letting the agent choose what to read and of stopping it to ask.
+  than assuming it in either direction. Even the expensive path runs a 5,000-loan book
+  for a year on less than a single analyst-day. The constraint is extraction accuracy
+  and the human review loop, which is where the effort went.
+- **Which side of the meter dominates flips between the two designs, and the reason
+  is architectural.** In the pipeline, output is 87% of cost — that is the economic
+  argument for narrow extraction schemas, since every field requested is billed at the
+  output rate on every document forever. In the agent, input is 65%, because each
+  approval round replays the entire conversation: five findings meant six round trips
+  each re-sending all three documents. The agent spends **20x the input tokens for
+  1.6x the output**, and only lands at 4x total because output is priced 8x.
+- **So the HITL loop is what costs money, and it costs it on the input side.** The
+  named lever is prompt caching — a conversation replayed six times with a growing
+  suffix is close to the ideal case for it. Not wired up; knowing where the cost is
+  and which lever moves it is the point.
 - **What is still excluded:** a real package is scanned pages through OCR rather than
   clean text, which this does not model at all.
 
