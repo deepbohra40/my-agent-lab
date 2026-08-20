@@ -2,7 +2,12 @@ using System.Diagnostics;
 using System.Text.Json;
 using Azure.AI.OpenAI;
 using Azure.Identity;
+using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
+// For ToModelUsage. The SDK-to-ModelUsage mapping deliberately lives next to the
+// extractors rather than in Cost/, so that folder keeps no SDK reference and its
+// arithmetic stays testable in the free CI job.
+using CreServicing.Agent.Extraction;
 using CreServicing.Agent.Tools;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -169,6 +174,12 @@ public static class ServicingAgentHost
         var trace = new List<FunctionCallContent>();
         CollectCalls(response, trace);
 
+        // Usage is accumulated for exactly the same reason, and getting this wrong
+        // would understate the run rather than fail it — the quiet direction of
+        // error. The first round is the expensive one: it reads every document.
+        var usage = response.ToModelUsage();
+        var modelCalls = 1;
+
         // A loop, not a single check. The agent files one exception per finding,
         // so a package with three breaches pauses three times — and the framework
         // may batch or stagger those requests. The instructor's example handles
@@ -211,6 +222,8 @@ public static class ServicingAgentHost
 
             response = await agent.RunAsync(new ChatMessage(ChatRole.User, decisions), session);
             CollectCalls(response, trace);
+            usage += response.ToModelUsage();
+            modelCalls++;
         }
 
         PrintCallsSince(trace, 0, $"TOOL TRACE — {trace.Count} call(s)");
@@ -221,6 +234,8 @@ public static class ServicingAgentHost
         Console.WriteLine();
 
         PrintLedger();
+
+        CostReport.PrintAgentRun(usage, modelCalls, trace.Count, deployment);
     }
 
     /// <summary>

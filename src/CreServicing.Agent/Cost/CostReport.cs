@@ -67,21 +67,68 @@ public static class CostReport
             $"{(rate is null ? "(unpriced)" : ModelPricing.Usd(total, rate).ToString("F6", Us)),12}");
         Console.WriteLine();
 
-        if (rate is null)
+        PrintCostAndProjection(total, deployment, "Per package");
+
+        Console.WriteLine("  What this number is for: compare it against the analyst hours it displaces.");
+        Console.WriteLine("  Extraction that is accurate and costs more than the person it replaces is a");
+        Console.WriteLine("  demo, not a system. This covers the three one-shot extraction calls only —");
+        Console.WriteLine("  run --agent on the same loan to see what the tool loop costs instead.");
+        Console.WriteLine();
+    }
+
+    /// <summary>
+    /// What one agent run cost. The same package as <see cref="PrintPackage"/>
+    /// but reached the other way — a tool loop over several round trips instead
+    /// of three one-shot extractions — so the two numbers are directly
+    /// comparable, and the comparison is the point.
+    ///
+    /// Usage is passed in already accumulated. It cannot be read off the final
+    /// response: once a run pauses for approval and resumes, the last response
+    /// holds only the last leg, and the expensive part — reading every document
+    /// in the package — happened before the first pause. Same reason the tool
+    /// trace is accumulated rather than read off the end.
+    /// </summary>
+    public static void PrintAgentRun(ModelUsage usage, int modelCalls, int toolCalls, string deployment)
+    {
+        Console.WriteLine("COST — this agent run");
+        Console.WriteLine(new string('-', 78));
+        Console.WriteLine($"  {modelCalls} model round trip(s), {toolCalls} tool call(s)");
+        Console.WriteLine($"  input   {usage.InputTokens,9:N0} tokens");
+        Console.WriteLine($"  output  {usage.OutputTokens,9:N0} tokens  (includes hidden reasoning tokens)");
+        Console.WriteLine();
+
+        PrintCostAndProjection(usage, deployment, "Per review");
+
+        Console.WriteLine("  Every approval round replays the whole conversation, so the input side grows");
+        Console.WriteLine("  with the number of findings rather than with the size of the package. That is");
+        Console.WriteLine("  the cost of letting the agent decide what to read and of stopping it to ask —");
+        Console.WriteLine("  compare it against the fixed-pipeline figure from --extract-snapshot before");
+        Console.WriteLine("  concluding the agent is worth it.");
+        Console.WriteLine();
+    }
+
+    /// <summary>
+    /// The dollar figure and the portfolio projection, shared by both views so a
+    /// package cost and an agent-run cost are quoted on identical terms. Quoting
+    /// them differently would make the comparison they exist for meaningless.
+    /// </summary>
+    private static void PrintCostAndProjection(ModelUsage total, string deployment, string perRunLabel)
+    {
+        if (ModelPricing.For(deployment) is not { } rate)
         {
             Console.WriteLine($"  No published rate on file for deployment '{deployment}', so the dollar");
-            Console.WriteLine("  columns are blank. Token counts above are still real.");
+            Console.WriteLine("  figures are omitted. Token counts above are still real.");
             Console.WriteLine();
             return;
         }
 
-        var perPackage = ModelPricing.Usd(total, rate);
+        var perRun = ModelPricing.Usd(total, rate);
 
         Console.WriteLine($"  Deployment  {rate.Deployment}  " +
                           $"(${rate.InputUsdPer1M:F2} in / ${rate.OutputUsdPer1M:F2} out per 1M tokens, " +
                           $"{ModelPricing.PricingRegion}, priced {ModelPricing.PricedAsOf})");
-        Console.WriteLine($"  Per package {perPackage.ToString("F6", Us)} USD  " +
-                          $"≈ ₹{(perPackage * ModelPricing.UsdToInr).ToString("F4", Us)}");
+        Console.WriteLine($"  {perRunLabel,-11} {perRun.ToString("F6", Us)} USD  " +
+                          $"≈ ₹{(perRun * ModelPricing.UsdToInr).ToString("F4", Us)}");
         Console.WriteLine();
 
         Console.WriteLine("  PROJECTED ANNUAL COST — quarterly reporting, one package per loan per quarter");
@@ -89,16 +136,11 @@ public static class CostReport
         Console.WriteLine($"    {new string('-', 10)}{new string('-', 14)}{new string('-', 16)}");
         foreach (var loans in PortfolioSizes)
         {
-            var annual = PortfolioProjection.AnnualUsd(perPackage, loans);
+            var annual = PortfolioProjection.AnnualUsd(perRun, loans);
             Console.WriteLine(
                 $"    {loans,-10:N0}{annual.ToString("N2", Us),14}{(annual * ModelPricing.UsdToInr).ToString("N0", Us),16}");
         }
 
-        Console.WriteLine();
-        Console.WriteLine("  What this number is for: compare it against the analyst hours it displaces.");
-        Console.WriteLine("  Extraction that is accurate and costs more than the person it replaces is a");
-        Console.WriteLine("  demo, not a system. Note also that this covers extraction only — the S6 agent");
-        Console.WriteLine("  loop is several round trips per package and costs materially more.");
         Console.WriteLine();
     }
 

@@ -164,9 +164,14 @@ Quarterly reporting, one package per loan per quarter: **$4.34/yr** at 250 loans
   is priced 8x. That is the economic argument for keeping extraction schemas narrow:
   every field an extractor is asked to return is billed at the output rate on every
   document, forever.
-- **What it excludes**, both stated in the report itself: the agent tool loop is
-  several round trips per package rather than three one-shot calls, and a real package
-  is scanned pages through OCR rather than clean text.
+- **The agent path is measured too, separately.** `--agent` prints its own figure on
+  the same terms, so the fixed three-call pipeline and the tool loop over the *same*
+  package are directly comparable rather than one being assumed cheaper. Every
+  approval round replays the whole conversation, so the input side grows with the
+  number of findings rather than with the size of the package — that is the price of
+  letting the agent choose what to read and of stopping it to ask.
+- **What is still excluded:** a real package is scanned pages through OCR rather than
+  clean text, which this does not model at all.
 
 Extractors return `ExtractionResult<T>` carrying that call's usage rather than writing
 into an ambient ledger — cost is a property of a call, so the call returns it, and

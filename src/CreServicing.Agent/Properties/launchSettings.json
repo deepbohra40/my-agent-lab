@@ -2,7 +2,7 @@
   "profiles": {
     "CreServicing.Agent": {
       "commandName": "Project",
-      "commandLineArgs": "--extract-snapshot"
+      "commandLineArgs": "--agent"
     }
   }
 }
