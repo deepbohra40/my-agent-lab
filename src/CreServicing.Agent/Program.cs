@@ -39,6 +39,22 @@ CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("en-US");
 //    return;
 //}
 
+// The assembled-snapshot path. Same caveat as --extract, times four: it calls
+// one model per document type instead of one, so it costs more and still needs
+// `az login`. This is the S5 milestone made runnable — the same FinancialSnapshot
+// the free path below reads from MockServicingSystem's hand-keyed dictionary,
+// produced instead from the borrower's actual documents via
+// FinancialSnapshotAssembler. Deliberately additive rather than a replacement of
+// the free path: the zero-cost default below stays zero-cost.
+//
+//   dotnet run --project src/CreServicing.Agent -- --extract-snapshot CRE-2019-0447
+//   dotnet run --project src/CreServicing.Agent -- --extract-snapshot CRE-2021-0912
+if (args.FirstOrDefault() == "--extract-snapshot")
+{
+    await RunExtractSnapshotDemo(args.ElementAtOrDefault(1) ?? "CRE-2019-0447");
+    return;
+}
+
 // The section 6 path. Same caveat as --extract — it calls a model, so it costs
 // money and needs `az login`. Costs more than --extract, because the tool loop
 // is several round trips rather than one.
@@ -131,7 +147,7 @@ Console.WriteLine("findings, every run. That property is what the agent layer mu
 static IReadOnlyList<SourceDocument> SafeGetPackage(string loanId)
 {
     try
-    { 
+    {
         return DocumentStore.GetPackage(loanId);
     }
     catch (DirectoryNotFoundException)
@@ -140,16 +156,81 @@ static IReadOnlyList<SourceDocument> SafeGetPackage(string loanId)
     }
 }
 
+/// <summary>
+/// The --extract-snapshot demo: assembles a FinancialSnapshot from the loan's
+/// documents and prints it beside the hand-keyed one, then runs CovenantEngine
+/// against both so the payoff — same findings, real documents — is visible
+/// rather than asserted.
+/// </summary>
+static async Task RunExtractSnapshotDemo(string loanId)
+{
+    var terms = MockServicingSystem.GetLoanTerms(loanId);
+    var asOfDate = DateOnly.FromDateTime(DateTime.Today);
+
+    Console.WriteLine("FINANCIAL SNAPSHOT ASSEMBLY");
+    Console.WriteLine($"Loan  {loanId}");
+    Console.WriteLine(new string('=', 78));
+    Console.WriteLine();
+
+    var assembled = await FinancialSnapshotAssembler.AssembleAsync(loanId, asOfDate);
+    var handKeyed = MockServicingSystem.GetHandKeyedSnapshot(loanId);
+
+    Console.WriteLine("SNAPSHOT — assembled from extraction vs. hand-keyed");
+    Console.WriteLine($"  {"field",-22}{"assembled",-20}hand-keyed");
+    Console.WriteLine($"  {new string('-', 22)}{new string('-', 20)}{new string('-', 20)}");
+    Console.WriteLine($"  {"netOperatingIncome",-22}{assembled.NetOperatingIncome.ToString("C0"),-20}{handKeyed.NetOperatingIncome:C0}");
+    Console.WriteLine($"  {"appraisedValue",-22}{(assembled.AppraisedValue?.ToString("C0") ?? "(null)"),-20}{handKeyed.AppraisedValue?.ToString("C0") ?? "(null)"}");
+    Console.WriteLine($"  {"occupancyRate",-22}{assembled.OccupancyRate.ToString("P2"),-20}{handKeyed.OccupancyRate:P2}");
+    Console.WriteLine($"  {"insuranceCoverage",-22}{assembled.InsuranceCoverage.ToString("C0"),-20}{handKeyed.InsuranceCoverage:C0}");
+    Console.WriteLine($"  {"insuranceExpiration",-22}{assembled.InsuranceExpiration.ToString("yyyy-MM-dd"),-20}{handKeyed.InsuranceExpiration:yyyy-MM-dd}");
+    Console.WriteLine();
+    Console.WriteLine("  appraisedValue is expected to differ: no appraisal document exists in this");
+    Console.WriteLine("  project's fixtures, so the assembled path always reports LTV-UNTESTED where");
+    Console.WriteLine("  the hand-keyed path (a stale prior appraisal on file) tests LTV normally.");
+    Console.WriteLine();
+
+    Console.WriteLine("COVENANT FINDINGS — assembled snapshot");
+    PrintFindings(CovenantEngine.Evaluate(terms, assembled, asOfDate));
+
+    Console.WriteLine("COVENANT FINDINGS — hand-keyed snapshot");
+    PrintFindings(CovenantEngine.Evaluate(terms, handKeyed, asOfDate));
+}
+
+static void PrintFindings(IReadOnlyList<ServicingException> findings)
+{
+    Console.WriteLine(new string('-', 78));
+    if (findings.Count == 0)
+    {
+        Console.WriteLine("  Compliant — no exceptions.");
+        Console.WriteLine();
+        return;
+    }
+
+    foreach (var finding in findings.OrderByDescending(f => f.Severity))
+    {
+        Console.WriteLine($"  [{finding.Severity.ToString().ToUpperInvariant()}] {finding.Code}  {finding.Summary}");
+    }
+    Console.WriteLine();
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Roadmap: what this grows into, section by section
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// S5  Extraction. RunAsync<RentRollExtract> over one fixture. Then the other
-//     three types. Grade each against fixtures/golden/expected-extractions.json
-//     by hand and write down what missed — that list is more useful than the
-//     code. Assemble a FinancialSnapshot from the extracts and delete the call
-//     to GetHandKeyedSnapshot above. That deletion is the moment the project
-//     becomes real.
+// S5  Extraction. Done — all four extractors exist (Extraction/), graded by
+//     hand against fixtures/golden/expected-extractions.json, and
+//     FinancialSnapshotAssembler turns the four extracts into the record
+//     CovenantEngine tests. Reachable via --extract-snapshot <loanId>.
+//
+//     GetHandKeyedSnapshot was NOT deleted, on purpose: the free default path
+//     above is documented as "no Azure call, no cost, no API key," and the
+//     extraction path costs money on every run. Replacing the free path would
+//     have broken that invariant silently. --extract-snapshot is additive —
+//     it proves the assembled snapshot produces the same covenant findings as
+//     the hand-keyed one (modulo the expected LTV-UNTESTED divergence, since
+//     no appraisal document exists in these fixtures) without touching the
+//     zero-cost default. CRE-2018-0233 has no fixture package by design — it
+//     stays hand-keyed-only, demonstrating the "no documents on file" path.
 //
 // S6  Tools. Fill in Tools/ServicingTools.cs. The agent now decides which
 //     documents to open instead of being handed all of them, and

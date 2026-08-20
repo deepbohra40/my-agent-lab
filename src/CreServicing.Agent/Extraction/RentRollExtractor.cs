@@ -71,9 +71,6 @@ public static class RentRollExtractor
     private const string Instructions =
         "Extract the rent roll figures from the document. take these into consideration - asOf - IOS yyyy-MM-dd, A rule about not-stated fields — that a figure the document does not state must come back null, and specifically that unit counts and square footage are not derivable from each\n  other ";
 
-    private const string DocumentOpen = "<<<BEGIN UNTRUSTED DOCUMENT>>>";
-    private const string DocumentClose = "<<<END UNTRUSTED DOCUMENT>>>";
-
     /// <summary>
     /// Extract one rent roll and print it beside the golden answer.
     /// </summary>
@@ -84,12 +81,8 @@ public static class RentRollExtractor
     /// </param>
     public static async Task RunAsync(string relativePath)
     {
-        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
-            ?? "gpt-5-mini";
-
         var document = DocumentStore.Load(relativePath);
+        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") ?? "gpt-5-mini";
 
         Console.WriteLine("RENT ROLL EXTRACTION");
         Console.WriteLine($"Document   {document.RelativePath}  (~{document.ApproximateTokens:N0} tokens)");
@@ -97,16 +90,7 @@ public static class RentRollExtractor
         Console.WriteLine(new string('=', 78));
         Console.WriteLine();
 
-        AIAgent extractor = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
-            .GetChatClient(deployment)
-            .AsAIAgent(
-                name: "RentRollExtractor",
-                instructions: Instructions);
-
-        AgentResponse<RentRollExtract> response =
-            await extractor.RunAsync<RentRollExtract>(BuildInput(document));
-
-        var extract = response.Result;
+        var extract = await ExtractAsync(document);
         if (extract is null)
         {
             Console.WriteLine("No structured result came back. Check the deployment and the schema.");
@@ -123,42 +107,31 @@ public static class RentRollExtractor
     }
 
     /// <summary>
-    /// The user message: a short framing line, then the document fenced off.
-    ///
-    /// The delimiter is the cheap half of injection defence and it is worth being
-    /// precise about what it does and does not buy. It gives the model a boundary
-    /// to reason about, which measurably helps and never guarantees. It does not
-    /// make the text safe. The actual guarantee in this project is structural —
-    /// the covenant decision is made by <see cref="CovenantEngine"/> from typed
-    /// numbers, and no sentence in a PDF can reach that code path.
+    /// The extraction itself, with no console I/O — what the eval harness and
+    /// <see cref="FinancialSnapshotAssembler"/> call directly. <see cref="RunAsync"/>
+    /// is this plus the demo printing.
     /// </summary>
-    private static string BuildInput(SourceDocument document)
+    public static async Task<RentRollExtract?> ExtractAsync(SourceDocument document)
     {
-        var text = document.Text;
+        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
+            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
+        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
+            ?? "gpt-5-mini";
 
-        // A document containing our own markers is either a formatting accident
-        // or someone trying to close the fence early and continue as instruction.
-        // Neutralise it and say so, rather than trusting the boundary to hold.
-        var tampered = text.Contains(DocumentOpen, StringComparison.OrdinalIgnoreCase)
-                       || text.Contains(DocumentClose, StringComparison.OrdinalIgnoreCase);
-        if (tampered)
-        {
-            text = text
-                .Replace(DocumentOpen, "[REDACTED MARKER]", StringComparison.OrdinalIgnoreCase)
-                .Replace(DocumentClose, "[REDACTED MARKER]", StringComparison.OrdinalIgnoreCase);
+        AIAgent extractor = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
+            .GetChatClient(deployment)
+            .AsAIAgent(
+                name: "RentRollExtractor",
+                instructions: Instructions);
 
-            Console.WriteLine("  ! Document contained the fence markers. Redacted before sending.");
-            Console.WriteLine();
-        }
+        AgentResponse<RentRollExtract> response =
+            await extractor.RunAsync<RentRollExtract>(BuildInput(document));
 
-        return $"""
-                Extract the rent roll below. Its file name is {document.FileName}.
-
-                {DocumentOpen}
-                {text}
-                {DocumentClose}
-                """;
+        return response.Result;
     }
+
+    private static string BuildInput(SourceDocument document)
+        => UntrustedDocument.Wrap(document, "Extract the rent roll below.");
 
     private static void PrintExtract(RentRollExtract extract)
     {
@@ -257,18 +230,3 @@ public static class RentRollExtractor
 
     private static string Show(string? value) => value ?? "(null)";
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Where this goes next
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// One extractor is a demo. The section 5 milestone is a FinancialSnapshot built
-// entirely from extracts — which needs the other three document types, and an
-// assembly step that turns four extracts into the one record CovenantEngine
-// takes. Occupancy comes from this file: OccupiedSquareFeet / TotalRentableSquareFeet
-// for office, OccupiedUnits / TotalUnits for multifamily. NOI comes from the
-// operating statement, recomputed as EGI - OpEx and never taken from the
-// borrower's reported figure.
-//
-// When that assembly works, delete the GetHandKeyedSnapshot call in Program.cs.
-// That deletion is the moment the project becomes real.
