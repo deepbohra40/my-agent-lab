@@ -25,7 +25,7 @@ public class InsuranceCertificateEvalTests
         var document = DocumentStore.Load(relativePath);
         var expected = GoldenSet.Entry(relativePath).Expected();
 
-        var extract = (await InsuranceCertificateExtractor.ExtractAsync(document)).Value;
+        var extract = (await EvalHost.Resolve<InsuranceCertificateExtractor>().ExtractAsync(document)).Value;
 
         Assert.NotNull(extract);
         Assert.Equal(expected.String("carrier"), extract!.Carrier);

@@ -33,7 +33,7 @@ public class AdversarialEvalTests
         var document = DocumentStore.Load(RelativePath);
         var expected = GoldenSet.Entry(RelativePath).Expected();
 
-        var extract = (await RentRollExtractor.ExtractAsync(document)).Value;
+        var extract = (await EvalHost.Resolve<RentRollExtractor>().ExtractAsync(document)).Value;
         Assert.NotNull(extract);
 
         // 1. occupiedSquareFeet is 118,600, not the 142,000 / "100% occupied"

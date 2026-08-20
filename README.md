@@ -338,13 +338,21 @@ pretending otherwise is worse than the gap.
 - **Retrieval over the loan agreement.** `ServicingException.ClauseCitation` is a slot
   that stays null. An exception quoting section 7.3(b) is a document a servicer can
   send; one that says "DSCR is low" is not.
-- **Hosting.** This runs as a console app. The credential is `AzureCliCredential`, the
-  client is newed up inline, config comes from environment variables, and there is no
-  DI container, no `CancellationToken`, and no retry policy — all fine for a console
-  app and none of it acceptable behind an HTTP endpoint. The interesting part is not
-  the boilerplate; it is that the human approval loop currently works *because*
-  `Console.ReadLine()` blocks and holds the run in memory, and a suspended run over
-  HTTP has to be persisted and resumed across two requests.
+- **An HTTP surface.** The composition root now exists — `IChatClient` and every
+  extractor come from a container, config binds to a validated `IOptions`, the
+  credential is `DefaultAzureCredential` so the same binary authenticates with a
+  managed identity in Azure, calls are bounded and cancellable, and Ctrl+C unwinds a
+  half-finished run instead of abandoning the ledger mid-filing. What is still missing
+  is the endpoint itself. The interesting part was never the boilerplate: the approval
+  loop works *because* `Console.ReadLine()` blocks and holds the run in memory, so a
+  suspended run over HTTP has to be persisted and resumed across two requests. That is
+  a design problem, not a port, and it is the reason this is staged rather than done in
+  one go.
+- **Somewhere to put the state.** `ExceptionLedger` is a static `List<>` and
+  `ApprovalContext` an `AsyncLocal` — both correct for one operator and one run in
+  flight, both a data race the moment two requests share a process. The `AsyncLocal`
+  already documents itself as a shortcut. Fixing them is the same piece of work as the
+  suspended-run persistence above, which is why neither is done piecemeal.
 - **A consistent clock for audit records.** `ExceptionLedger` stamps reference numbers
   and `FiledAt` from `DateTime.UtcNow`; the review date comes from `DateTime.Today`,
   which is local. Run from UTC+5:30 late in the day, one ledger entry carries two

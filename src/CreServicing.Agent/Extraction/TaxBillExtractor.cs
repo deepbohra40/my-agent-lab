@@ -1,6 +1,6 @@
 using System.Text.Json;
-using Azure.AI.OpenAI;
-using Azure.Identity;
+using CreServicing.Agent.Configuration;
+using Microsoft.Extensions.Options;
 using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 using CreServicing.Agent.Domain;
@@ -30,8 +30,13 @@ namespace CreServicing.Agent.Extraction;
 /// tax-delinquency finding into the covenant engine is future scope, not an
 /// oversight here.
 /// </summary>
-public static class TaxBillExtractor
+public sealed class TaxBillExtractor(IChatClient chatClient, IOptions<AzureOpenAIOptions> options)
 {
+    private readonly AIAgent _extractor =
+        chatClient.AsAIAgent(name: "TaxBillExtractor", instructions: Instructions);
+
+    private readonly string _deployment = options.Value.Deployment;
+
     private const string Instructions =
         """
         Extract the figures from this county property tax bill.
@@ -56,10 +61,10 @@ public static class TaxBillExtractor
         Every figure the bill does not state must come back null. Never estimate one.
         """;
 
-    public static async Task RunAsync(string relativePath)
+    public async Task RunAsync(string relativePath, CancellationToken cancellationToken = default)
     {
         var document = DocumentStore.Load(relativePath);
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") ?? "gpt-5-mini";
+        var deployment = _deployment;
 
         Console.WriteLine("TAX BILL EXTRACTION");
         Console.WriteLine($"Document   {document.RelativePath}  (~{document.ApproximateTokens:N0} tokens)");
@@ -67,7 +72,7 @@ public static class TaxBillExtractor
         Console.WriteLine(new string('=', 78));
         Console.WriteLine();
 
-        var result = await ExtractAsync(document);
+        var result = await ExtractAsync(document, cancellationToken);
         if (result.Value is not { } extract)
         {
             Console.WriteLine("No structured result came back. Check the deployment and the schema.");
@@ -80,21 +85,12 @@ public static class TaxBillExtractor
     }
 
     /// <summary>No console I/O — what the eval harness calls directly.</summary>
-    public static async Task<ExtractionResult<TaxBillExtract>> ExtractAsync(SourceDocument document)
+    public async Task<ExtractionResult<TaxBillExtract>> ExtractAsync(
+        SourceDocument document, CancellationToken cancellationToken = default)
     {
-        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
-            ?? "gpt-5-mini";
-
-        AIAgent extractor = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
-            .GetChatClient(deployment)
-            .AsAIAgent(
-                name: "TaxBillExtractor",
-                instructions: Instructions);
-
         AgentResponse<TaxBillExtract> response =
-            await extractor.RunAsync<TaxBillExtract>(BuildInput(document));
+            await _extractor.RunAsync<TaxBillExtract>(
+                BuildInput(document), cancellationToken: cancellationToken);
 
         return new ExtractionResult<TaxBillExtract>(response.Result, response.ToModelUsage());
     }

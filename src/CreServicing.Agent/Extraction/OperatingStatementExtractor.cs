@@ -1,11 +1,11 @@
 using System.Text.Json;
-using Azure.AI.OpenAI;
-using Azure.Identity;
+using CreServicing.Agent.Configuration;
 using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 using CreServicing.Agent.Domain;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 using OpenAI.Chat;
 
 namespace CreServicing.Agent.Extraction;
@@ -25,8 +25,13 @@ namespace CreServicing.Agent.Extraction;
 /// <see cref="Covenants.NetOperatingIncome"/> — never in this class, and never by
 /// the model.
 /// </summary>
-public static class OperatingStatementExtractor
+public sealed class OperatingStatementExtractor(IChatClient chatClient, IOptions<AzureOpenAIOptions> options)
 {
+    private readonly AIAgent _extractor =
+        chatClient.AsAIAgent(name: "OperatingStatementExtractor", instructions: Instructions);
+
+    private readonly string _deployment = options.Value.Deployment;
+
     private const string Instructions =
         """
         Extract the figures from this borrower operating statement.
@@ -48,10 +53,10 @@ public static class OperatingStatementExtractor
         estimate one.
         """;
 
-    public static async Task RunAsync(string relativePath)
+    public async Task RunAsync(string relativePath, CancellationToken cancellationToken = default)
     {
         var document = DocumentStore.Load(relativePath);
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") ?? "gpt-5-mini";
+        var deployment = _deployment;
 
         Console.WriteLine("OPERATING STATEMENT EXTRACTION");
         Console.WriteLine($"Document   {document.RelativePath}  (~{document.ApproximateTokens:N0} tokens)");
@@ -59,7 +64,7 @@ public static class OperatingStatementExtractor
         Console.WriteLine(new string('=', 78));
         Console.WriteLine();
 
-        var result = await ExtractAsync(document);
+        var result = await ExtractAsync(document, cancellationToken);
         if (result.Value is not { } extract)
         {
             Console.WriteLine("No structured result came back. Check the deployment and the schema.");
@@ -72,21 +77,12 @@ public static class OperatingStatementExtractor
     }
 
     /// <summary>No console I/O — what the eval harness and <see cref="FinancialSnapshotAssembler"/> call directly.</summary>
-    public static async Task<ExtractionResult<OperatingStatementExtract>> ExtractAsync(SourceDocument document)
+    public async Task<ExtractionResult<OperatingStatementExtract>> ExtractAsync(
+        SourceDocument document, CancellationToken cancellationToken = default)
     {
-        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
-            ?? "gpt-5-mini";
-
-        AIAgent extractor = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
-            .GetChatClient(deployment)
-            .AsAIAgent(
-                name: "OperatingStatementExtractor",
-                instructions: Instructions);
-
         AgentResponse<OperatingStatementExtract> response =
-            await extractor.RunAsync<OperatingStatementExtract>(BuildInput(document));
+            await _extractor.RunAsync<OperatingStatementExtract>(
+                BuildInput(document), cancellationToken: cancellationToken);
 
         return new ExtractionResult<OperatingStatementExtract>(response.Result, response.ToModelUsage());
     }

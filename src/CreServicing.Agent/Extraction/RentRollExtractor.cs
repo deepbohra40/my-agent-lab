@@ -1,6 +1,6 @@
 using System.Text.Json;
-using Azure.AI.OpenAI;
-using Azure.Identity;
+using CreServicing.Agent.Configuration;
+using Microsoft.Extensions.Options;
 using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 using CreServicing.Agent.Domain;
@@ -25,8 +25,17 @@ namespace CreServicing.Agent.Extraction;
 /// number to a covenant threshold. That happens in <see cref="CovenantEngine"/>,
 /// in C#, where it is reproducible.
 /// </summary>
-public static class RentRollExtractor
+public sealed class RentRollExtractor(IChatClient chatClient, IOptions<AzureOpenAIOptions> options)
 {
+    // Built once per instance rather than per call. The agent is a thin wrapper
+    // over the injected IChatClient — note the type: nothing in this file names
+    // Azure any more, so swapping provider is a change to ServiceRegistration
+    // and nothing else.
+    private readonly AIAgent _extractor =
+        chatClient.AsAIAgent(name: "RentRollExtractor", instructions: Instructions);
+
+    private readonly string _deployment = options.Value.Deployment;
+
     // ── The assignment ───────────────────────────────────────────────────────
     //
     // This string is the work. Everything else in this file is plumbing you have
@@ -80,10 +89,10 @@ public static class RentRollExtractor
     /// Point it at <c>adversarial/rent-roll-injected-2026-Q2.txt</c> once the clean
     /// one is passing.
     /// </param>
-    public static async Task RunAsync(string relativePath)
+    public async Task RunAsync(string relativePath, CancellationToken cancellationToken = default)
     {
         var document = DocumentStore.Load(relativePath);
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") ?? "gpt-5-mini";
+        var deployment = _deployment;
 
         Console.WriteLine("RENT ROLL EXTRACTION");
         Console.WriteLine($"Document   {document.RelativePath}  (~{document.ApproximateTokens:N0} tokens)");
@@ -91,7 +100,7 @@ public static class RentRollExtractor
         Console.WriteLine(new string('=', 78));
         Console.WriteLine();
 
-        var result = await ExtractAsync(document);
+        var result = await ExtractAsync(document, cancellationToken);
         if (result.Value is not { } extract)
         {
             Console.WriteLine("No structured result came back. Check the deployment and the schema.");
@@ -108,21 +117,12 @@ public static class RentRollExtractor
     /// <see cref="FinancialSnapshotAssembler"/> call directly. <see cref="RunAsync"/>
     /// is this plus the demo printing.
     /// </summary>
-    public static async Task<ExtractionResult<RentRollExtract>> ExtractAsync(SourceDocument document)
+    public async Task<ExtractionResult<RentRollExtract>> ExtractAsync(
+        SourceDocument document, CancellationToken cancellationToken = default)
     {
-        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
-            ?? "gpt-5-mini";
-
-        AIAgent extractor = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
-            .GetChatClient(deployment)
-            .AsAIAgent(
-                name: "RentRollExtractor",
-                instructions: Instructions);
-
         AgentResponse<RentRollExtract> response =
-            await extractor.RunAsync<RentRollExtract>(BuildInput(document));
+            await _extractor.RunAsync<RentRollExtract>(
+                BuildInput(document), cancellationToken: cancellationToken);
 
         return new ExtractionResult<RentRollExtract>(response.Result, response.ToModelUsage());
     }

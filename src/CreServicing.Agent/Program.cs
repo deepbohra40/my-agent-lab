@@ -1,9 +1,13 @@
 using System.Globalization;
+using CreServicing.Agent.Configuration;
 using CreServicing.Agent.Agents;
 using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 using CreServicing.Agent.Domain;
 using CreServicing.Agent.Extraction;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 
 // CRE post-close document intake and covenant compliance.
 //
@@ -27,16 +31,66 @@ using CreServicing.Agent.Extraction;
 // its own formatting for the same reason; this covers the display lines below.
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("en-US");
 
+// ── The composition root ─────────────────────────────────────────────────────
+//
+// The model-backed paths resolve their dependencies from here rather than newing
+// up a client inline. Two things follow from that which are easy to miss:
+//
+//   1. The container is built lazily, inside each branch. The default path below
+//      is documented as needing no credential and no configuration, and eagerly
+//      building a host that validates AZURE_OPENAI_ENDPOINT would break that for
+//      everyone running the free path — turning a startup-validation improvement
+//      into a regression for the one path that was always meant to just work.
+//
+//   2. Ctrl+C is wired to a CancellationToken rather than killing the process.
+//      A servicing run that is halfway through filing exceptions should unwind,
+//      not vanish.
+using var lifetime = new ConsoleLifetime();
+
+static IHost BuildHost()
+{
+    var builder = Host.CreateApplicationBuilder();
+    builder.Services.AddCreServicing(builder.Configuration);
+    var host = builder.Build();
+
+    // Force the options to bind and validate here rather than letting the first
+    // model call trip over it. A misconfiguration should read as a setup problem
+    // with a named setting, not as an unhandled exception three frames inside an
+    // extractor — the whole point of validating at startup is lost if the operator
+    // still has to read a stack trace to find out which key is missing.
+    try
+    {
+        _ = host.Services.GetRequiredService<IOptions<AzureOpenAIOptions>>().Value;
+    }
+    catch (OptionsValidationException ex)
+    {
+        Console.Error.WriteLine("Configuration error — nothing was run and nothing was charged.");
+        foreach (var failure in ex.Failures)
+        {
+            Console.Error.WriteLine($"  {failure}");
+        }
+
+        Console.Error.WriteLine();
+        Console.Error.WriteLine("The default `dotnet run` with no flag needs none of this and still works.");
+        host.Dispose();
+        Environment.Exit(1);
+    }
+
+    return host;
+}
+
 // The extraction path is opt-in, because it is the only thing here that calls a
-// model and therefore the only thing that costs money and needs `az login`.
+// model and therefore the only thing that costs money and needs a credential.
 // Everything below this branch runs offline, always.
 //
 //   dotnet run --project src/CreServicing.Agent -- --extract
 //   dotnet run --project src/CreServicing.Agent -- --extract CRE-2021-0912/rent-roll-2026-Q2.txt
 if (args.FirstOrDefault() == "--extract")
 {
-    await RentRollExtractor.RunAsync(
-        args.ElementAtOrDefault(1) ?? "CRE-2019-0447/rent-roll-2026-Q2.txt");
+    using var host = BuildHost();
+    await host.Services.GetRequiredService<RentRollExtractor>().RunAsync(
+        args.ElementAtOrDefault(1) ?? "CRE-2019-0447/rent-roll-2026-Q2.txt",
+        lifetime.Token);
     return;
 }
 
@@ -52,7 +106,12 @@ if (args.FirstOrDefault() == "--extract")
 //   dotnet run --project src/CreServicing.Agent -- --extract-snapshot CRE-2021-0912
 if (args.FirstOrDefault() == "--extract-snapshot")
 {
-    await RunExtractSnapshotDemo(args.ElementAtOrDefault(1) ?? "CRE-2019-0447");
+    using var host = BuildHost();
+    await RunExtractSnapshotDemo(
+        host.Services.GetRequiredService<FinancialSnapshotAssembler>(),
+        host.Services.GetRequiredService<IOptions<AzureOpenAIOptions>>().Value.Deployment,
+        args.ElementAtOrDefault(1) ?? "CRE-2019-0447",
+        lifetime.Token);
     return;
 }
 
@@ -64,7 +123,10 @@ if (args.FirstOrDefault() == "--extract-snapshot")
 //   dotnet run --project src/CreServicing.Agent -- --agent CRE-2021-0912
 if (args.FirstOrDefault() == "--agent")
 {
-    await ServicingAgentHost.RunAsync(args.ElementAtOrDefault(1) ?? "CRE-2019-0447");
+    using var host = BuildHost();
+    await host.Services.GetRequiredService<ServicingAgentHost>().RunAsync(
+        args.ElementAtOrDefault(1) ?? "CRE-2019-0447",
+        lifetime.Token);
     return;
 }
 
@@ -168,7 +230,11 @@ static IReadOnlyList<SourceDocument> SafeGetPackage(string loanId)
 /// against both so the payoff — same findings, real documents — is visible
 /// rather than asserted.
 /// </summary>
-static async Task RunExtractSnapshotDemo(string loanId)
+static async Task RunExtractSnapshotDemo(
+    FinancialSnapshotAssembler assembler,
+    string deployment,
+    string loanId,
+    CancellationToken cancellationToken)
 {
     var terms = MockServicingSystem.GetLoanTerms(loanId);
     var reviewDate = DateOnly.FromDateTime(DateTime.Today);
@@ -186,7 +252,7 @@ static async Task RunExtractSnapshotDemo(string loanId)
     // it — but the assembler does not read that field back out today, and using
     // DateTime.Today here would have made the two snapshots disagree about which
     // period they measured while the demo claims they are the same numbers.
-    var assembly = await FinancialSnapshotAssembler.AssembleAsync(loanId, handKeyed.AsOf);
+    var assembly = await assembler.AssembleAsync(loanId, handKeyed.AsOf, cancellationToken);
     var assembled = assembly.Snapshot;
 
     Console.WriteLine("SNAPSHOT — assembled from extraction vs. hand-keyed");
@@ -212,9 +278,7 @@ static async Task RunExtractSnapshotDemo(string loanId)
     // The other half of the comparison, and the one that decides whether any of
     // this ships. The hand-keyed path above costs an analyst's time; this one
     // costs tokens, and until both are on the page the trade is not visible.
-    CostReport.PrintPackage(
-        assembly.Cost,
-        Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") ?? "gpt-5-mini");
+    CostReport.PrintPackage(assembly.Cost, deployment);
 }
 
 static void PrintFindings(IReadOnlyList<ServicingException> findings)

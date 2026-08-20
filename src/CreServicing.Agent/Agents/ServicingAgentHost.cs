@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
-using Azure.AI.OpenAI;
-using Azure.Identity;
+using CreServicing.Agent.Configuration;
 using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 // For ToModelUsage. The SDK-to-ModelUsage mapping deliberately lives next to the
@@ -11,6 +10,7 @@ using CreServicing.Agent.Extraction;
 using CreServicing.Agent.Tools;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Options;
 // Required, not decoration — the AsAIAgent overload taking OpenAI's ChatClient
 // lives here. Same trip-wire as RentRollExtractor.
 using OpenAI.Chat;
@@ -49,7 +49,7 @@ namespace CreServicing.Agent.Agents;
 /// to authorise the agent's reading of documents they have not seen — see
 /// <see cref="Decide"/> for the other half of making the gate mean something.
 /// </summary>
-public static class ServicingAgentHost
+public sealed class ServicingAgentHost(IChatClient chatClient, IOptions<AzureOpenAIOptions> options)
 {
     // ── The system prompt ────────────────────────────────────────────────────
     //
@@ -110,12 +110,9 @@ public static class ServicingAgentHost
     /// <summary>Who is sitting at the console approving filings. Recorded on every exception.</summary>
     private const string Approver = "console-operator";
 
-    public static async Task RunAsync(string loanId)
+    public async Task RunAsync(string loanId, CancellationToken cancellationToken = default)
     {
-        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
-            ?? "gpt-5-mini";
+        var deployment = options.Value.Deployment;
 
         Console.WriteLine("SERVICING AGENT — COVENANT REVIEW");
         Console.WriteLine($"Loan       {loanId}");
@@ -146,9 +143,7 @@ public static class ServicingAgentHost
             .Select(tool => tool.Name)
             .ToHashSet(StringComparer.Ordinal);
 
-        AIAgent agent = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
-            .GetChatClient(deployment)
-            .AsAIAgent(
+        AIAgent agent = chatClient.AsAIAgent(
                 name: "ServicingAnalyst",
                 instructions: Instructions,
                 tools: tools);

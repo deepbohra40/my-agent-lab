@@ -1,6 +1,6 @@
 using System.Text.Json;
-using Azure.AI.OpenAI;
-using Azure.Identity;
+using CreServicing.Agent.Configuration;
+using Microsoft.Extensions.Options;
 using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 using CreServicing.Agent.Domain;
@@ -22,8 +22,13 @@ namespace CreServicing.Agent.Extraction;
 /// silently dropping a real breach. <see cref="InsuranceCertificateExtract.CoverageAmount"/>
 /// must be the building limit only.
 /// </summary>
-public static class InsuranceCertificateExtractor
+public sealed class InsuranceCertificateExtractor(IChatClient chatClient, IOptions<AzureOpenAIOptions> options)
 {
+    private readonly AIAgent _extractor =
+        chatClient.AsAIAgent(name: "InsuranceCertificateExtractor", instructions: Instructions);
+
+    private readonly string _deployment = options.Value.Deployment;
+
     private const string Instructions =
         """
         Extract the figures from this certificate of property insurance.
@@ -46,10 +51,10 @@ public static class InsuranceCertificateExtractor
         estimate one.
         """;
 
-    public static async Task RunAsync(string relativePath)
+    public async Task RunAsync(string relativePath, CancellationToken cancellationToken = default)
     {
         var document = DocumentStore.Load(relativePath);
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") ?? "gpt-5-mini";
+        var deployment = _deployment;
 
         Console.WriteLine("INSURANCE CERTIFICATE EXTRACTION");
         Console.WriteLine($"Document   {document.RelativePath}  (~{document.ApproximateTokens:N0} tokens)");
@@ -57,7 +62,7 @@ public static class InsuranceCertificateExtractor
         Console.WriteLine(new string('=', 78));
         Console.WriteLine();
 
-        var result = await ExtractAsync(document);
+        var result = await ExtractAsync(document, cancellationToken);
         if (result.Value is not { } extract)
         {
             Console.WriteLine("No structured result came back. Check the deployment and the schema.");
@@ -70,21 +75,12 @@ public static class InsuranceCertificateExtractor
     }
 
     /// <summary>No console I/O — what the eval harness and <see cref="FinancialSnapshotAssembler"/> call directly.</summary>
-    public static async Task<ExtractionResult<InsuranceCertificateExtract>> ExtractAsync(SourceDocument document)
+    public async Task<ExtractionResult<InsuranceCertificateExtract>> ExtractAsync(
+        SourceDocument document, CancellationToken cancellationToken = default)
     {
-        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
-        var deployment = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
-            ?? "gpt-5-mini";
-
-        AIAgent extractor = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
-            .GetChatClient(deployment)
-            .AsAIAgent(
-                name: "InsuranceCertificateExtractor",
-                instructions: Instructions);
-
         AgentResponse<InsuranceCertificateExtract> response =
-            await extractor.RunAsync<InsuranceCertificateExtract>(BuildInput(document));
+            await _extractor.RunAsync<InsuranceCertificateExtract>(
+                BuildInput(document), cancellationToken: cancellationToken);
 
         return new ExtractionResult<InsuranceCertificateExtract>(response.Result, response.ToModelUsage());
     }

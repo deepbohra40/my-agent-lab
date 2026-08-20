@@ -39,7 +39,10 @@ public sealed record AssembledSnapshot(FinancialSnapshot Snapshot, PackageCost C
 ///      appraisal on file tests LTV normally. That is an expected divergence
 ///      between the two paths, not a bug — see the demo output in Program.cs.
 /// </summary>
-public static class FinancialSnapshotAssembler
+public sealed class FinancialSnapshotAssembler(
+    RentRollExtractor rentRollExtractor,
+    OperatingStatementExtractor operatingStatementExtractor,
+    InsuranceCertificateExtractor insuranceCertificateExtractor)
 {
     /// <summary>
     /// Locates each document in the loan's package by filename convention — there
@@ -48,7 +51,8 @@ public static class FinancialSnapshotAssembler
     /// The tax bill is extracted for completeness but not consumed: no covenant
     /// test in this project depends on it yet.
     /// </summary>
-    public static async Task<AssembledSnapshot> AssembleAsync(string loanId, DateOnly asOf)
+    public async Task<AssembledSnapshot> AssembleAsync(
+        string loanId, DateOnly asOf, CancellationToken cancellationToken = default)
     {
         var package = DocumentStore.GetPackage(loanId);
 
@@ -56,9 +60,11 @@ public static class FinancialSnapshotAssembler
         var operatingStatementDoc = FindDocument(package, loanId, "operating-statement");
         var insuranceDoc = FindDocument(package, loanId, "insurance-certificate");
 
-        var rentRollResult = await RentRollExtractor.ExtractAsync(rentRollDoc);
-        var operatingStatementResult = await OperatingStatementExtractor.ExtractAsync(operatingStatementDoc);
-        var insuranceResult = await InsuranceCertificateExtractor.ExtractAsync(insuranceDoc);
+        var rentRollResult = await rentRollExtractor.ExtractAsync(rentRollDoc, cancellationToken);
+        var operatingStatementResult =
+            await operatingStatementExtractor.ExtractAsync(operatingStatementDoc, cancellationToken);
+        var insuranceResult =
+            await insuranceCertificateExtractor.ExtractAsync(insuranceDoc, cancellationToken);
 
         // Cost is accounted before the null checks below, so a package that fails
         // to assemble still reports what it spent failing. Money spent on a run
