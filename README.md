@@ -345,6 +345,15 @@ pretending otherwise is worse than the gap.
   the boilerplate; it is that the human approval loop currently works *because*
   `Console.ReadLine()` blocks and holds the run in memory, and a suspended run over
   HTTP has to be persisted and resumed across two requests.
+- **A consistent clock for audit records.** `ExceptionLedger` stamps reference numbers
+  and `FiledAt` from `DateTime.UtcNow`; the review date comes from `DateTime.Today`,
+  which is local. Run from UTC+5:30 late in the day, one ledger entry carries two
+  different dates for the same event — `EX-20260820-005` with evidence reading "as of
+  2026-08-21". Ironic in a project that pins `en-US` formatting so audit records are
+  byte-identical across machines, and then lets the machine's timezone pick the date.
+  The fix is a decision rather than a typo: covenant windows are business judgments,
+  so the review date should be a business date in an explicit servicing timezone with
+  UTC retained for `FiledAt` — not whatever the host happens to be set to.
 - **OCR.** Real packages are scanned pages. These fixtures are clean text.
 - **Low-confidence routing.** Extractors report a self-scored confidence that is
   captured and never acted on. The answer that matters is not "retry" — it is "route
