@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Azure.AI.OpenAI;
 using Azure.Identity;
+using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 using CreServicing.Agent.Domain;
 using Microsoft.Agents.AI;
@@ -90,8 +91,8 @@ public static class RentRollExtractor
         Console.WriteLine(new string('=', 78));
         Console.WriteLine();
 
-        var extract = await ExtractAsync(document);
-        if (extract is null)
+        var result = await ExtractAsync(document);
+        if (result.Value is not { } extract)
         {
             Console.WriteLine("No structured result came back. Check the deployment and the schema.");
             return;
@@ -99,11 +100,7 @@ public static class RentRollExtractor
 
         PrintExtract(extract);
         PrintGoldenComparison(relativePath, extract);
-
-        // COST — roadmap item. response carries usage; print tokens and dollars
-        // per document here once you have found the property on this package
-        // version. A per-document cost times a realistic portfolio is the number
-        // that decides whether any of this ships.
+        CostReport.PrintDocument(document.FileName, result.Usage, deployment);
     }
 
     /// <summary>
@@ -111,7 +108,7 @@ public static class RentRollExtractor
     /// <see cref="FinancialSnapshotAssembler"/> call directly. <see cref="RunAsync"/>
     /// is this plus the demo printing.
     /// </summary>
-    public static async Task<RentRollExtract?> ExtractAsync(SourceDocument document)
+    public static async Task<ExtractionResult<RentRollExtract>> ExtractAsync(SourceDocument document)
     {
         var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
             ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
@@ -127,7 +124,7 @@ public static class RentRollExtractor
         AgentResponse<RentRollExtract> response =
             await extractor.RunAsync<RentRollExtract>(BuildInput(document));
 
-        return response.Result;
+        return new ExtractionResult<RentRollExtract>(response.Result, response.ToModelUsage());
     }
 
     private static string BuildInput(SourceDocument document)

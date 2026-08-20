@@ -1,7 +1,18 @@
+using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 using CreServicing.Agent.Domain;
 
 namespace CreServicing.Agent.Extraction;
+
+/// <summary>
+/// One assembled snapshot and what it cost to produce.
+///
+/// The cost rides along with the snapshot rather than being reported out of band
+/// because they are the same fact viewed twice: this snapshot is worth having
+/// only if that number is small enough. Separating them invites quoting the
+/// accuracy without the price.
+/// </summary>
+public sealed record AssembledSnapshot(FinancialSnapshot Snapshot, PackageCost Cost);
 
 /// <summary>
 /// Turns the four per-document extracts into the one <see cref="FinancialSnapshot"/>
@@ -37,7 +48,7 @@ public static class FinancialSnapshotAssembler
     /// The tax bill is extracted for completeness but not consumed: no covenant
     /// test in this project depends on it yet.
     /// </summary>
-    public static async Task<FinancialSnapshot> AssembleAsync(string loanId, DateOnly asOf)
+    public static async Task<AssembledSnapshot> AssembleAsync(string loanId, DateOnly asOf)
     {
         var package = DocumentStore.GetPackage(loanId);
 
@@ -45,11 +56,24 @@ public static class FinancialSnapshotAssembler
         var operatingStatementDoc = FindDocument(package, loanId, "operating-statement");
         var insuranceDoc = FindDocument(package, loanId, "insurance-certificate");
 
-        var rentRoll = await RentRollExtractor.ExtractAsync(rentRollDoc)
+        var rentRollResult = await RentRollExtractor.ExtractAsync(rentRollDoc);
+        var operatingStatementResult = await OperatingStatementExtractor.ExtractAsync(operatingStatementDoc);
+        var insuranceResult = await InsuranceCertificateExtractor.ExtractAsync(insuranceDoc);
+
+        // Cost is accounted before the null checks below, so a package that fails
+        // to assemble still reports what it spent failing. Money spent on a run
+        // that threw is money spent.
+        var cost = new PackageCost(loanId, [
+            new DocumentCost(rentRollDoc.FileName, rentRollResult.Usage),
+            new DocumentCost(operatingStatementDoc.FileName, operatingStatementResult.Usage),
+            new DocumentCost(insuranceDoc.FileName, insuranceResult.Usage)
+        ]);
+
+        var rentRoll = rentRollResult.Value
             ?? throw new InvalidOperationException($"Rent roll extraction returned nothing for {loanId}.");
-        var operatingStatement = await OperatingStatementExtractor.ExtractAsync(operatingStatementDoc)
+        var operatingStatement = operatingStatementResult.Value
             ?? throw new InvalidOperationException($"Operating statement extraction returned nothing for {loanId}.");
-        var insurance = await InsuranceCertificateExtractor.ExtractAsync(insuranceDoc)
+        var insurance = insuranceResult.Value
             ?? throw new InvalidOperationException($"Insurance certificate extraction returned nothing for {loanId}.");
 
         var noi = Covenants.NetOperatingIncome(
@@ -61,7 +85,7 @@ public static class FinancialSnapshotAssembler
         var insuranceExpiration = ParseDate(
             Require(insurance.ExpirationDate, "expirationDate", insuranceDoc), insuranceDoc);
 
-        return new FinancialSnapshot(
+        var snapshot = new FinancialSnapshot(
             LoanId: loanId,
             AsOf: asOf,
             NetOperatingIncome: noi,
@@ -69,6 +93,8 @@ public static class FinancialSnapshotAssembler
             OccupancyRate: occupancy,
             InsuranceCoverage: Require(insurance.CoverageAmount, "coverageAmount", insuranceDoc),
             InsuranceExpiration: insuranceExpiration);
+
+        return new AssembledSnapshot(snapshot, cost);
     }
 
     private static decimal ComputeOccupancy(RentRollExtract rentRoll, SourceDocument document)

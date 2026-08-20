@@ -26,7 +26,7 @@ public class OperatingStatementEvalTests
         var document = DocumentStore.Load(relativePath);
         var expected = GoldenSet.Entry(relativePath).Expected();
 
-        var extract = await OperatingStatementExtractor.ExtractAsync(document);
+        var extract = (await OperatingStatementExtractor.ExtractAsync(document)).Value;
 
         Assert.NotNull(extract);
         Assert.Equal(expected.String("periodStart"), extract!.PeriodStart);

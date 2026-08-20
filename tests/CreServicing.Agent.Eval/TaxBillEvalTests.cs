@@ -26,7 +26,7 @@ public class TaxBillEvalTests
         var document = DocumentStore.Load(relativePath);
         var expected = GoldenSet.Entry(relativePath).Expected();
 
-        var extract = await TaxBillExtractor.ExtractAsync(document);
+        var extract = (await TaxBillExtractor.ExtractAsync(document)).Value;
 
         Assert.NotNull(extract);
         Assert.Equal(expected.Int("taxYear"), extract!.TaxYear);

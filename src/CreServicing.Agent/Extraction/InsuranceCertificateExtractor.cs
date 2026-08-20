@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Azure.AI.OpenAI;
 using Azure.Identity;
+using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 using CreServicing.Agent.Domain;
 using Microsoft.Agents.AI;
@@ -56,8 +57,8 @@ public static class InsuranceCertificateExtractor
         Console.WriteLine(new string('=', 78));
         Console.WriteLine();
 
-        var extract = await ExtractAsync(document);
-        if (extract is null)
+        var result = await ExtractAsync(document);
+        if (result.Value is not { } extract)
         {
             Console.WriteLine("No structured result came back. Check the deployment and the schema.");
             return;
@@ -65,10 +66,11 @@ public static class InsuranceCertificateExtractor
 
         PrintExtract(extract);
         PrintGoldenComparison(relativePath, extract);
+        CostReport.PrintDocument(document.FileName, result.Usage, deployment);
     }
 
     /// <summary>No console I/O — what the eval harness and <see cref="FinancialSnapshotAssembler"/> call directly.</summary>
-    public static async Task<InsuranceCertificateExtract?> ExtractAsync(SourceDocument document)
+    public static async Task<ExtractionResult<InsuranceCertificateExtract>> ExtractAsync(SourceDocument document)
     {
         var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
             ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
@@ -84,7 +86,7 @@ public static class InsuranceCertificateExtractor
         AgentResponse<InsuranceCertificateExtract> response =
             await extractor.RunAsync<InsuranceCertificateExtract>(BuildInput(document));
 
-        return response.Result;
+        return new ExtractionResult<InsuranceCertificateExtract>(response.Result, response.ToModelUsage());
     }
 
     private static string BuildInput(SourceDocument document)

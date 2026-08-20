@@ -63,6 +63,16 @@ dotnet run --project src/CreServicing.Agent
 # One loan
 dotnet run --project src/CreServicing.Agent -- CRE-2019-0447
 
+# The three paths below call a model: they cost money and need `az login`.
+#
+# Assemble the FinancialSnapshot from the borrower's actual documents and show it
+# beside the hand-keyed one, with the covenant findings and the cost of both.
+dotnet run --project src/CreServicing.Agent -- --extract-snapshot CRE-2019-0447
+dotnet run --project src/CreServicing.Agent -- --extract-snapshot CRE-2021-0912
+
+# The Section 6 agent: tool loop, with the one write behind human approval.
+dotnet run --project src/CreServicing.Agent -- --agent CRE-2019-0447
+
 # Superseded, see note above
 dotnet run --project src/ReviewAgent.Console
 
@@ -88,9 +98,9 @@ dashboard `15379`/`17242`) so both can run side by side without collisions.
 dotnet test
 ```
 
-57 tests over `CovenantEngine`, `Covenants` and the write gate, running in about
-200ms. No Azure credentials, no network, no cost — everything under test is a pure
-function, which is the point rather than a convenience.
+71 tests over `CovenantEngine`, `Covenants`, the write gate and the cost model,
+running in about 240ms. No Azure credentials, no network, no cost — everything under
+test is a pure function, which is the point rather than a convenience.
 
 What they actually pin:
 
@@ -141,7 +151,11 @@ my-agent-lab/
 │       ├── CovenantEngineTests.cs  #   the band edges, one tick either side
 │       ├── CovenantsTests.cs       #   the four primitives and their divide-by-zero guards
 │       ├── AuditabilityTests.cs    #   the properties that justify C# over a model
-│       └── WriteGateTests.cs       #   what the one write tool refuses, and approval accounting
+│       ├── WriteGateTests.cs       #   what the one write tool refuses, and approval accounting
+│       └── ModelCostTests.cs       #   token arithmetic, pricing, portfolio projection
+│   └── CreServicing.Agent.Eval/    # xUnit — extraction accuracy against the golden set.
+│                                   #   Calls a real model: costs money, needs `az login`,
+│                                   #   deliberately kept out of the free CI job.
 └── src/
     ├── CreServicing.Agent/          # the derived project — CRE covenant compliance
     │   ├── Domain/                  #   LoanTerms, Covenants, CovenantEngine, Extractions
@@ -149,6 +163,8 @@ my-agent-lab/
     │   │                            #   ApprovalContext — who authorised which filing
     │   ├── Agents/                  #   ServicingAgentHost — the tool loop and the HITL gate
     │   ├── Tools/                   #   ServicingTools — four reads, one gated write
+    │   ├── Extraction/              #   the four extractors + FinancialSnapshotAssembler
+    │   ├── Cost/                    #   tokens, rates, per-package cost, portfolio projection
     │   └── fixtures/                #   synthetic borrower packages
     │       ├── CRE-2019-0447/       #     distressed office — four documents, four breaches
     │       ├── CRE-2021-0912/       #     healthy multifamily — must produce a CLEAN report
@@ -245,8 +261,42 @@ instructor's snippets paste in without API drift. Bump them deliberately, not by
 ## Cost
 
 `gpt-5-mini` Global Standard, capped at 10K TPM: $0.25 /1M input, $2.00 /1M output.
-About $0.0017 (~₹0.15) per review call. A $10/month budget alert
-(`maf-course-monthly`) is armed on the resource group at 50/80/100%.
+A $10/month budget alert (`maf-course-monthly`) is armed on the resource group at
+50/80/100%.
+
+**Measured, not estimated.** `--extract-snapshot` prints the real figure at the end
+of every run, per document and per package, and projects it across a portfolio.
+`CRE-2019-0447`, three documents:
+
+| document | input | output | USD |
+| --- | ---: | ---: | ---: |
+| `rent-roll-2026-Q2.txt` | 766 | 527 | 0.001246 |
+| `operating-statement-2026-Q2.txt` | 775 | 653 | 0.001500 |
+| `insurance-certificate-2026.txt` | 735 | 705 | 0.001594 |
+| **per package** | **2,276** | **1,885** | **0.004339** |
+
+Quarterly reporting, one package per loan per quarter: **$4.34/yr** at 250 loans,
+**$17.36** at 1,000, **$86.78** at 5,000.
+
+Three things worth reading off that table:
+
+- **Cost is not the constraint on this system**, and it is worth knowing that with a
+  number rather than assuming it in either direction. A book of 5,000 loans costs
+  less to extract for a year than a single analyst-day. The constraint is extraction
+  accuracy and the human review loop, which is where the effort went.
+- **Output tokens dominate** — 1,885 output cost more than 2,276 input, because
+  output is priced 8x. That is why the extraction schemas are kept narrow: every
+  field an extractor is asked to return is billed at the output rate on every
+  document, forever.
+- **What it excludes**, both stated in the report itself: the S6 agent loop is
+  several round trips per package rather than three one-shot calls, and a real
+  package is scanned pages through OCR rather than clean text.
+
+The arithmetic behind it (`Cost/`) holds no SDK reference — the mapping from the
+SDK's usage report lives in `Extraction/` — so a per-package dollar figure is
+something the free CI job asserts on without credentials. Rates are data, not
+behaviour: `ModelPricing.PricedAsOf` is printed alongside every figure so a stale
+projection is visibly stale rather than quietly wrong.
 
 ## Roadmap
 

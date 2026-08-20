@@ -1,5 +1,6 @@
 using System.Globalization;
 using CreServicing.Agent.Agents;
+using CreServicing.Agent.Cost;
 using CreServicing.Agent.Data;
 using CreServicing.Agent.Domain;
 using CreServicing.Agent.Extraction;
@@ -172,7 +173,8 @@ static async Task RunExtractSnapshotDemo(string loanId)
     Console.WriteLine(new string('=', 78));
     Console.WriteLine();
 
-    var assembled = await FinancialSnapshotAssembler.AssembleAsync(loanId, asOfDate);
+    var assembly = await FinancialSnapshotAssembler.AssembleAsync(loanId, asOfDate);
+    var assembled = assembly.Snapshot;
     var handKeyed = MockServicingSystem.GetHandKeyedSnapshot(loanId);
 
     Console.WriteLine("SNAPSHOT — assembled from extraction vs. hand-keyed");
@@ -194,6 +196,13 @@ static async Task RunExtractSnapshotDemo(string loanId)
 
     Console.WriteLine("COVENANT FINDINGS — hand-keyed snapshot");
     PrintFindings(CovenantEngine.Evaluate(terms, handKeyed, asOfDate));
+
+    // The other half of the comparison, and the one that decides whether any of
+    // this ships. The hand-keyed path above costs an analyst's time; this one
+    // costs tokens, and until both are on the page the trade is not visible.
+    CostReport.PrintPackage(
+        assembly.Cost,
+        Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") ?? "gpt-5-mini");
 }
 
 static void PrintFindings(IReadOnlyList<ServicingException> findings)
@@ -279,10 +288,23 @@ static void PrintFindings(IReadOnlyList<ServicingException> findings)
 //        document text, delimited and labelled as data. Prove the injection fails
 //        AND that the attempt gets surfaced.
 //
-// COST   Tokens and dollars per package, from response.Usage — the same reporting
-//        you already kept in my-agent-lab after dropping OTel. A per-document
-//        cost, times a realistic portfolio, is the number that decides whether
-//        any of this ships.
+// COST   Done — Cost/ModelCost.cs and Cost/CostReport.cs, printed at the end of
+//        --extract-snapshot. Extractors return ExtractionResult<T> carrying the
+//        usage for that call rather than writing into an ambient ledger, so
+//        concurrent extraction (the S9 fan-out) accounts correctly with no
+//        coordination.
+//
+//        The measured answer, CRE-2019-0447 on gpt-5-mini: 2,276 input and
+//        1,885 output tokens across three documents, $0.0043 per package.
+//        Quarterly across 5,000 loans that is $87 a year. Cost is not the
+//        constraint on this system and it is worth knowing that with a number
+//        rather than assuming it either way — the constraint is extraction
+//        accuracy and the human review loop, which is where the effort went.
+//
+//        Two things the figure does not cover, both called out in the report
+//        itself: the S6 agent loop is several round trips per package rather
+//        than three one-shot calls, and a real package is scanned pages
+//        through OCR rather than clean text.
 //
 // OCR    Real packages are scans. Azure Document Intelligence behind
 //        DocumentStore. Know that prebuilt-layout exists and roughly what it

@@ -25,7 +25,7 @@ public class RentRollEvalTests
         var document = DocumentStore.Load(relativePath);
         var expected = GoldenSet.Entry(relativePath).Expected();
 
-        var extract = await RentRollExtractor.ExtractAsync(document);
+        var extract = (await RentRollExtractor.ExtractAsync(document)).Value;
 
         Assert.NotNull(extract);
         Assert.Equal(expected.String("asOf"), extract!.AsOf);
