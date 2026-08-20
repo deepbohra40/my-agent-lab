@@ -57,10 +57,49 @@ public static class CovenantEngine
         "MATURITY"
     };
 
+    /// <summary>
+    /// Runs every covenant test for one loan.
+    ///
+    /// ── Why there are two dates, and why neither defaults to the other ───────
+    ///
+    /// These tests ask two different questions and the answers move on different
+    /// clocks:
+    ///
+    ///   • DSCR, LTV and occupancy ask "how did the collateral perform *during
+    ///     the reporting period*?" — anchored to <paramref name="asOfDate"/>,
+    ///     the date the period closed. That answer never changes once the period
+    ///     is shut; re-running this in six months must produce the same DSCR.
+    ///
+    ///   • Insurance expiry and maturity horizon ask "is the policy valid, is
+    ///     this loan maturing, *right now*?" — anchored to
+    ///     <paramref name="reviewDate"/>. That answer changes every single day,
+    ///     and it is a question about the present, not about the period.
+    ///
+    /// A single date collapsed both, and the failure was not hypothetical: an
+    /// agent run passed the rent roll's as-of date (2026-06-30, correctly — that
+    /// is what the tool asks for) against a policy expiring 2026-09-30. Ninety-two
+    /// days out, so no finding. Reviewed on 2026-08-20 the same policy is 41 days
+    /// from lapsing and inside the warning window. The agent path silently
+    /// dropped an INS-EXPIRY the deterministic path raised.
+    ///
+    /// In servicing that is the wrong direction to be wrong. A lapsed policy on a
+    /// $22M building is a same-day phone call, and "it was fine at period close"
+    /// is not a defence. So both dates are required: a caller that has not thought
+    /// about which clock a test runs on should not compile.
+    /// </summary>
+    /// <param name="asOfDate">
+    /// When the reporting period closed. Drives the measured covenants.
+    /// </param>
+    /// <param name="reviewDate">
+    /// When this review is being run — today, in practice. Drives the
+    /// time-horizon tests. Passing <paramref name="asOfDate"/> here is legitimate
+    /// only when reproducing a historical review as it stood on that day.
+    /// </param>
     public static IReadOnlyList<ServicingException> Evaluate(
         LoanTerms terms,
         FinancialSnapshot snapshot,
-        DateOnly asOfDate)
+        DateOnly asOfDate,
+        DateOnly reviewDate)
     {
         if (terms.LoanId != snapshot.LoanId)
         {
@@ -144,7 +183,11 @@ public static class CovenantEngine
         }
 
         // ── Insurance: expiry ────────────────────────────────────────────────
-        var daysToExpiry = snapshot.InsuranceExpiration.DayNumber - asOfDate.DayNumber;
+        //
+        // reviewDate, not asOfDate. "Is this building insured today" is a question
+        // about today. See the header on Evaluate for the run where getting this
+        // wrong silently dropped a finding.
+        var daysToExpiry = snapshot.InsuranceExpiration.DayNumber - reviewDate.DayNumber;
         if (daysToExpiry < 0)
         {
             findings.Add(new ServicingException(
@@ -152,7 +195,7 @@ public static class CovenantEngine
                 "INS-EXPIRY",
                 ExceptionSeverity.Breach,
                 $"Property insurance lapsed on {snapshot.InsuranceExpiration:yyyy-MM-dd}.",
-                $"{-daysToExpiry} days past expiration as of {asOfDate:yyyy-MM-dd}."));
+                $"{-daysToExpiry} days past expiration as of {reviewDate:yyyy-MM-dd}."));
         }
         else if (daysToExpiry <= InsuranceExpiryWarningDays)
         {
@@ -161,11 +204,14 @@ public static class CovenantEngine
                 "INS-EXPIRY",
                 ExceptionSeverity.Watch,
                 $"Property insurance expires on {snapshot.InsuranceExpiration:yyyy-MM-dd}.",
-                $"{daysToExpiry} days remaining as of {asOfDate:yyyy-MM-dd}; renewal certificate not yet on file."));
+                $"{daysToExpiry} days remaining as of {reviewDate:yyyy-MM-dd}; renewal certificate not yet on file."));
         }
 
         // ── Maturity horizon ─────────────────────────────────────────────────
-        var daysToMaturity = terms.MaturityDate.DayNumber - asOfDate.DayNumber;
+        //
+        // reviewDate for the same reason: a loan does not stop approaching
+        // maturity because the reporting period it is measured against is old.
+        var daysToMaturity = terms.MaturityDate.DayNumber - reviewDate.DayNumber;
         if (daysToMaturity >= 0 && daysToMaturity <= MaturityWarningDays)
         {
             findings.Add(new ServicingException(
@@ -173,7 +219,7 @@ public static class CovenantEngine
                 "MATURITY",
                 ExceptionSeverity.Informational,
                 $"Loan matures on {terms.MaturityDate:yyyy-MM-dd}.",
-                $"{daysToMaturity} days to maturity as of {asOfDate:yyyy-MM-dd}; confirm payoff or extension intent."));
+                $"{daysToMaturity} days to maturity as of {reviewDate:yyyy-MM-dd}; confirm payoff or extension intent."));
         }
 
         return findings;

@@ -293,7 +293,20 @@ public static class ServicingTools
             InsuranceCoverage: insuranceCoverage,
             InsuranceExpiration: expiration);
 
-        var findings = CovenantEngine.Evaluate(terms, snapshot, asOf);
+        // The review date is NOT a parameter of this tool, for the same reason the
+        // covenant thresholds are not: it is not the model's to supply. asOfDate
+        // is a fact about the borrower's package and the model reads it off the
+        // rent roll; "what is today" is a fact about this process, and the system
+        // knows it. Letting the model pass it would mean a model that misread a
+        // date could decide an expired insurance policy was still current.
+        //
+        // This split is not theoretical. Before it existed, an agent run passed
+        // the rent roll's 2026-06-30 — correctly, per the description below — and
+        // the INS-EXPIRY finding the deterministic path raised on the same loan
+        // silently disappeared, because the policy was still 92 days out at
+        // period close and only 41 days out on the day of review.
+        var findings = CovenantEngine.Evaluate(
+            terms, snapshot, asOf, DateOnly.FromDateTime(DateTime.Today));
 
         // The computed intermediates are echoed back deliberately. The model is
         // about to write a report citing these numbers, and it should cite the

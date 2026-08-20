@@ -43,11 +43,11 @@ public class AuditabilityTests
         // hand, so drift there is drift in the audit trail.
         var (terms, snapshot) = DistressedLoan();
 
-        var first = CovenantEngine.Evaluate(terms, snapshot, Given.AsOf);
+        var first = CovenantEngine.Evaluate(terms, snapshot, Given.AsOf, Given.AsOf);
 
         for (var run = 0; run < 50; run++)
         {
-            var again = CovenantEngine.Evaluate(terms, snapshot, Given.AsOf);
+            var again = CovenantEngine.Evaluate(terms, snapshot, Given.AsOf, Given.AsOf);
 
             Assert.Equal(first.Count, again.Count);
             for (var i = 0; i < first.Count; i++)
@@ -72,13 +72,13 @@ public class AuditabilityTests
         // so the ambient culture cannot reach the output. This test is what stops
         // someone "simplifying" that away.
         var (terms, snapshot) = DistressedLoan();
-        var expected = CovenantEngine.Evaluate(terms, snapshot, Given.AsOf);
+        var expected = CovenantEngine.Evaluate(terms, snapshot, Given.AsOf, Given.AsOf);
 
         var original = CultureInfo.CurrentCulture;
         try
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
-            var actual = CovenantEngine.Evaluate(terms, snapshot, Given.AsOf);
+            var actual = CovenantEngine.Evaluate(terms, snapshot, Given.AsOf, Given.AsOf);
 
             Assert.Equal(expected, actual);
             Assert.All(actual, finding =>
@@ -124,7 +124,7 @@ public class AuditabilityTests
         var scenarios = new List<IReadOnlyList<ServicingException>>();
 
         var (terms, snapshot) = DistressedLoan();
-        scenarios.Add(CovenantEngine.Evaluate(terms, snapshot, Given.AsOf));
+        scenarios.Add(CovenantEngine.Evaluate(terms, snapshot, Given.AsOf, Given.AsOf));
         scenarios.Add(Given.Evaluate(snapshot: Given.CompliantSnapshot with { AppraisedValue = null }));
         scenarios.Add(Given.Evaluate(
             snapshot: Given.CompliantSnapshot with { InsuranceExpiration = Given.AsOf.AddDays(-30) }));
@@ -148,7 +148,7 @@ public class AuditabilityTests
         // the call without rerunning the system.
         var (terms, snapshot) = DistressedLoan();
 
-        Assert.All(CovenantEngine.Evaluate(terms, snapshot, Given.AsOf), finding =>
+        Assert.All(CovenantEngine.Evaluate(terms, snapshot, Given.AsOf, Given.AsOf), finding =>
         {
             Assert.False(string.IsNullOrWhiteSpace(finding.Summary));
             Assert.False(string.IsNullOrWhiteSpace(finding.Evidence));
@@ -166,7 +166,7 @@ public class AuditabilityTests
         var (terms, snapshot) = DistressedLoan();
 
         Assert.All(
-            CovenantEngine.Evaluate(terms, snapshot, Given.AsOf),
+            CovenantEngine.Evaluate(terms, snapshot, Given.AsOf, Given.AsOf),
             finding => Assert.Null(finding.ClauseCitation));
     }
 }

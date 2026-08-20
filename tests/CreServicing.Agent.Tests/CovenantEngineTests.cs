@@ -279,6 +279,80 @@ public class CovenantEngineTests
         Assert.Equal(ExceptionSeverity.Breach, findings.Single("MATURITY").Severity);
     }
 
+    // ── The two clocks ───────────────────────────────────────────────────────
+    //
+    // Evaluate takes a period-close date and a review date because the covenants
+    // ask two different questions. These pin the divergence, and they exist
+    // because collapsing the two dates was a real bug: an agent run passed the
+    // rent roll's as-of date — correctly, that is what the tool asks for — and an
+    // INS-EXPIRY the deterministic path raised on the same loan silently vanished.
+
+    [Fact]
+    public void Insurance_still_healthy_at_period_close_is_flagged_if_it_lapses_before_the_review()
+    {
+        // Ninety days out at period close: nothing. Reviewed sixty days later it
+        // is thirty days from lapsing and must be flagged. This is the exact
+        // shape of the bug — the finding depends on the review date, not on when
+        // the reporting period happened to close.
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with { InsuranceExpiration = Given.AsOf.AddDays(90) },
+            reviewDate: Given.AsOf.AddDays(60));
+
+        Assert.Equal(ExceptionSeverity.Watch, findings.Single("INS-EXPIRY").Severity);
+    }
+
+    [Fact]
+    public void Insurance_that_lapsed_before_the_review_is_a_breach_however_healthy_the_period_looked()
+    {
+        // The one that matters most in servicing. A policy that was current at
+        // period close and has since lapsed is a same-day phone call, and "it was
+        // fine when the quarter closed" is not a defence.
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with { InsuranceExpiration = Given.AsOf.AddDays(30) },
+            reviewDate: Given.AsOf.AddDays(45));
+
+        var finding = findings.Single("INS-EXPIRY");
+        Assert.Equal(ExceptionSeverity.Breach, finding.Severity);
+        Assert.Contains("lapsed", finding.Summary);
+    }
+
+    [Fact]
+    public void The_maturity_horizon_runs_off_the_review_date_not_the_period()
+    {
+        // 200 days from period close is outside the 180-day horizon; 140 days
+        // from the review date is inside it.
+        var findings = Given.Evaluate(
+            terms: Given.CompliantTerms with { MaturityDate = Given.AsOf.AddDays(200) },
+            reviewDate: Given.AsOf.AddDays(60));
+
+        Assert.Equal(ExceptionSeverity.Informational, findings.Single("MATURITY").Severity);
+    }
+
+    [Fact]
+    public void The_measured_covenants_do_not_move_when_the_review_date_does()
+    {
+        // The other half of the split, and the one that would break if someone
+        // "simplified" this by passing reviewDate everywhere: DSCR, LTV and
+        // occupancy describe a closed period. Reviewing the same package a year
+        // later must not change what the property earned.
+        var snapshot = Given.CompliantSnapshot with
+        {
+            NetOperatingIncome = Given.NoiForDscr(1.10m),
+            OccupancyRate = 0.80m,
+            // Pinned far enough out that neither review date trips the expiry
+            // test, so the only thing that could differ is a measured covenant.
+            InsuranceExpiration = Given.AsOf.AddDays(900)
+        };
+
+        var atClose = Given.Evaluate(snapshot: snapshot, reviewDate: Given.AsOf);
+        var aYearLater = Given.Evaluate(snapshot: snapshot, reviewDate: Given.AsOf.AddDays(365));
+
+        foreach (var code in new[] { "DSCR-MIN", "OCC-MIN" })
+        {
+            Assert.Equal(atClose.Single(code).Evidence, aYearLater.Single(code).Evidence);
+        }
+    }
+
     // ── The guard ───────────────────────────────────────────────────────────
 
     [Fact]

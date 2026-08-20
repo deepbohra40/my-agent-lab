@@ -238,7 +238,7 @@ before they were set.
 dotnet test
 ```
 
-**71 tests, ~240ms, no credentials and no network.** Everything under test is a pure
+**75 tests, ~240ms, no credentials and no network.** Everything under test is a pure
 function, which is the point rather than a convenience. What they pin:
 
 - **The band edges, not the middles.** A DSCR three points clear of its floor passes
@@ -249,6 +249,15 @@ function, which is the point rather than a convenience. What they pin:
   from silently inverting.
 - **A missing appraisal is `LTV-UNTESTED`, not silence.** An untested covenant is not
   a passing covenant. Silence would let a reviewer conclude LTV was checked and cleared.
+- **The two clocks.** `Evaluate` takes a period-close date *and* a review date, because
+  DSCR/LTV/occupancy ask "how did the collateral perform during the period" while
+  insurance expiry and maturity ask "is this true right now". Collapsing them was a real
+  bug, caught by running the agent against a loan the deterministic path already had an
+  answer for — the agent passed the rent roll's as-of date (correctly; that is what the
+  tool asks for) and an `INS-EXPIRY` silently vanished, because the policy was 92 days
+  out at period close and 41 days out on the day of review. Tests now pin both
+  directions: a policy that lapses between period close and review is caught, and the
+  measured covenants do not move when the review date does.
 - **Culture independence**, asserted against three non-US locales.
 - **Determinism**, across 50 consecutive evaluations of the same distressed loan.
 - **Every emitted code is declared in `KnownCodes`** — the engine cannot emit a finding

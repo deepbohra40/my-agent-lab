@@ -33,12 +33,12 @@ CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("en-US");
 //
 //   dotnet run --project src/CreServicing.Agent -- --extract
 //   dotnet run --project src/CreServicing.Agent -- --extract CRE-2021-0912/rent-roll-2026-Q2.txt
-//if (args.FirstOrDefault() == "--extract")
-//{
-//    await RentRollExtractor.RunAsync(
-//        args.ElementAtOrDefault(1) ?? "CRE-2019-0447/rent-roll-2026-Q2.txt");
-//    return;
-//}
+if (args.FirstOrDefault() == "--extract")
+{
+    await RentRollExtractor.RunAsync(
+        args.ElementAtOrDefault(1) ?? "CRE-2019-0447/rent-roll-2026-Q2.txt");
+    return;
+}
 
 // The assembled-snapshot path. Same caveat as --extract, times four: it calls
 // one model per document type instead of one, so it costs more and still needs
@@ -68,7 +68,10 @@ if (args.FirstOrDefault() == "--agent")
     return;
 }
 
-var asOfDate = DateOnly.FromDateTime(DateTime.Today);
+// The review is happening now; the snapshots it reads carry their own period-close
+// date. CovenantEngine takes both because the measured covenants and the
+// time-horizon ones run on different clocks — see the header on Evaluate.
+var reviewDate = DateOnly.FromDateTime(DateTime.Today);
 var requested = args.FirstOrDefault();
 
 var loanIds = requested is not null
@@ -76,7 +79,7 @@ var loanIds = requested is not null
     : MockServicingSystem.LoanIds.OrderBy(id => id).ToArray();
 
 Console.WriteLine("CRE SERVICING — COVENANT COMPLIANCE REVIEW");
-Console.WriteLine($"Review date: {asOfDate:yyyy-MM-dd}");
+Console.WriteLine($"Review date: {reviewDate:yyyy-MM-dd}");
 Console.WriteLine($"Loans in scope: {loanIds.Length}");
 Console.WriteLine(new string('=', 78));
 
@@ -113,7 +116,9 @@ foreach (var loanId in loanIds)
     // Section 6: the same record, produced by the agent from the same documents.
     var snapshot = MockServicingSystem.GetHandKeyedSnapshot(terms.LoanId);
 
-    var findings = CovenantEngine.Evaluate(terms, snapshot, asOfDate);
+    // The period-close date comes off the snapshot itself rather than being
+    // passed in — the snapshot is the thing that knows which period it measured.
+    var findings = CovenantEngine.Evaluate(terms, snapshot, snapshot.AsOf, reviewDate);
     allFindings.AddRange(findings);
 
     Console.WriteLine();
@@ -166,16 +171,23 @@ static IReadOnlyList<SourceDocument> SafeGetPackage(string loanId)
 static async Task RunExtractSnapshotDemo(string loanId)
 {
     var terms = MockServicingSystem.GetLoanTerms(loanId);
-    var asOfDate = DateOnly.FromDateTime(DateTime.Today);
+    var reviewDate = DateOnly.FromDateTime(DateTime.Today);
 
     Console.WriteLine("FINANCIAL SNAPSHOT ASSEMBLY");
     Console.WriteLine($"Loan  {loanId}");
     Console.WriteLine(new string('=', 78));
     Console.WriteLine();
 
-    var assembly = await FinancialSnapshotAssembler.AssembleAsync(loanId, asOfDate);
-    var assembled = assembly.Snapshot;
     var handKeyed = MockServicingSystem.GetHandKeyedSnapshot(loanId);
+
+    // The assembled snapshot is stamped with the same period-close date the
+    // hand-keyed one carries, so the two are compared like with like. Deriving it
+    // from the rent roll's own asOf would be better still — the document states
+    // it — but the assembler does not read that field back out today, and using
+    // DateTime.Today here would have made the two snapshots disagree about which
+    // period they measured while the demo claims they are the same numbers.
+    var assembly = await FinancialSnapshotAssembler.AssembleAsync(loanId, handKeyed.AsOf);
+    var assembled = assembly.Snapshot;
 
     Console.WriteLine("SNAPSHOT — assembled from extraction vs. hand-keyed");
     Console.WriteLine($"  {"field",-22}{"assembled",-20}hand-keyed");
@@ -192,10 +204,10 @@ static async Task RunExtractSnapshotDemo(string loanId)
     Console.WriteLine();
 
     Console.WriteLine("COVENANT FINDINGS — assembled snapshot");
-    PrintFindings(CovenantEngine.Evaluate(terms, assembled, asOfDate));
+    PrintFindings(CovenantEngine.Evaluate(terms, assembled, assembled.AsOf, reviewDate));
 
     Console.WriteLine("COVENANT FINDINGS — hand-keyed snapshot");
-    PrintFindings(CovenantEngine.Evaluate(terms, handKeyed, asOfDate));
+    PrintFindings(CovenantEngine.Evaluate(terms, handKeyed, handKeyed.AsOf, reviewDate));
 
     // The other half of the comparison, and the one that decides whether any of
     // this ships. The hand-keyed path above costs an analyst's time; this one

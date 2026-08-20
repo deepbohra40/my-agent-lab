@@ -60,14 +60,23 @@ internal static class Given
     /// <summary>NOI that produces exactly the DSCR asked for, given the baseline debt service.</summary>
     public static decimal NoiForDscr(decimal dscr) => dscr * CompliantTerms.AnnualDebtService;
 
+    /// <summary>
+    /// <paramref name="reviewDate"/> defaults to <paramref name="asOf"/> so the
+    /// band tests — which care about DSCR/LTV/occupancy and not about clocks —
+    /// stay terse. <see cref="CovenantEngine.Evaluate"/> itself requires both,
+    /// deliberately: production code must not be able to conflate them by
+    /// omission. The tests that care about the difference pass it explicitly.
+    /// </summary>
     public static IReadOnlyList<ServicingException> Evaluate(
         LoanTerms? terms = null,
         FinancialSnapshot? snapshot = null,
-        DateOnly? asOf = null)
+        DateOnly? asOf = null,
+        DateOnly? reviewDate = null)
         => CovenantEngine.Evaluate(
             terms ?? CompliantTerms,
             snapshot ?? CompliantSnapshot,
-            asOf ?? AsOf);
+            asOf ?? AsOf,
+            reviewDate ?? asOf ?? AsOf);
 
     /// <summary>The one finding with this code, asserting there is exactly one.</summary>
     public static ServicingException Single(this IReadOnlyList<ServicingException> findings, string code)
