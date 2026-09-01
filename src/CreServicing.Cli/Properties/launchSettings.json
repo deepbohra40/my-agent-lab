@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CreServicing.Core": {
+      "commandName": "Project",
+      "commandLineArgs": "--agent"
+    }
+  }
+}

@@ -12,48 +12,72 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      # v5 across the board. The v4 pins were Node-20 actions that GitHub had
+      # begun force-running on Node 24, which works until it does not.
+      - uses: actions/checkout@v5
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
 
-      # Scoped to the test project rather than the whole solution, on purpose.
-      # The ProjectReference pulls in CreServicing.Agent, so the code under test
-      # is fully built and analysed. What is deliberately left out is the
-      # section 5 MinimalAgent/AppHost project: it needs the Aspire workload,
-      # which would add an install step and several minutes to every run in
-      # order to compile a throwaway follow-along scratchpad that has no tests.
+      # Two test projects, not one. The covenant tests cover the deterministic
+      # engine and — since item 3 stage C — the suspend/resume state machine, via
+      # a scripted IChatClient. The API tests drive the same machine over HTTP
+      # through WebApplicationFactory.
       #
-      # If CreServicing.Agent ever gains an Aspire host of its own — item 3 on
-      # the roadmap — this narrows the wrong thing and should be revisited.
+      # Both are restored and built through their own project files rather than
+      # through the solution, on purpose. The ProjectReference chain pulls in
+      # CreServicing.Core, CreServicing.Api and CreServicing.Cli, so everything
+      # that matters is compiled and analysed. What is deliberately left out is
+      # the section 5 MinimalAgent/AppHost project: it needs the Aspire workload,
+      # which would add an install step and several minutes to every run in order
+      # to compile a throwaway follow-along scratchpad that has no tests.
+      #
+      # If CreServicing.Core ever gains an Aspire host of its own — item 4 on the
+      # roadmap — this narrows the wrong thing and should be revisited.
       - name: Restore
-        run: dotnet restore tests/CreServicing.Agent.Tests/CreServicing.Agent.Tests.csproj
+        run: |
+          dotnet restore tests/CreServicing.Core.Tests/CreServicing.Core.Tests.csproj
+          dotnet restore tests/CreServicing.Api.Tests/CreServicing.Api.Tests.csproj
 
       - name: Build
-        run: >
-          dotnet build tests/CreServicing.Agent.Tests/CreServicing.Agent.Tests.csproj
-          --configuration Release
-          --no-restore
-          -warnaserror
+        run: |
+          dotnet build tests/CreServicing.Core.Tests/CreServicing.Core.Tests.csproj \
+            --configuration Release --no-restore -warnaserror
+          dotnet build tests/CreServicing.Api.Tests/CreServicing.Api.Tests.csproj \
+            --configuration Release --no-restore -warnaserror
 
-      # No Azure credentials, no AZURE_OPENAI_* variables, no network. Every test
-      # here runs against CovenantEngine and Covenants, which are pure functions.
-      # The moment a test needs a model, it does not belong in this job — it
-      # belongs behind the eval harness, on a schedule, with a cost budget.
-      - name: Test
+      # No Azure credentials, no AZURE_OPENAI_* variables, no network. The
+      # covenant tests run against pure functions; the approval-loop tests run
+      # against a scripted chat client. The moment a test needs a real model, it
+      # does not belong in this job — it belongs behind the eval harness, on a
+      # schedule, with a cost budget.
+      #
+      # The API tests depend on that being true in a second way: several of them
+      # assert that the deterministic endpoints serve correctly with no model
+      # configured at all, which is only a meaningful assertion in an environment
+      # where none is.
+      - name: Test — covenant engine, cost, and the approval state machine
         run: >
-          dotnet test tests/CreServicing.Agent.Tests/CreServicing.Agent.Tests.csproj
+          dotnet test tests/CreServicing.Core.Tests/CreServicing.Core.Tests.csproj
           --configuration Release
           --no-build
-          --logger "trx;LogFileName=test-results.trx"
+          --logger "trx;LogFileName=core-test-results.trx"
+          --logger "console;verbosity=normal"
+
+      - name: Test — the HTTP surface
+        run: >
+          dotnet test tests/CreServicing.Api.Tests/CreServicing.Api.Tests.csproj
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=api-test-results.trx"
           --logger "console;verbosity=normal"
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: test-results
-          path: '**/test-results.trx'
+          path: '**/*-test-results.trx'
           retention-days: 14

@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/CreServicing.Agent/CreServicing.Agent.csproj" />
+    <Project Path="src/CreServicing.Core/CreServicing.Core.csproj" />
+    <Project Path="src/CreServicing.Cli/CreServicing.Cli.csproj" />
+    <Project Path="src/CreServicing.Api/CreServicing.Api.csproj" />
     <Project Path="src/ReviewAgent.Console/ReviewAgent.Console.csproj" />
   </Folder>
   <Folder Name="/src/section5-getting-started/">
@@ -18,7 +20,8 @@
     <Project Path="src/section5-getting-started/MinimalAgent/WebApi/WebApi.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/CreServicing.Agent.Tests/CreServicing.Agent.Tests.csproj" />
-    <Project Path="tests/CreServicing.Agent.Eval/CreServicing.Agent.Eval.csproj" />
+    <Project Path="tests/CreServicing.Core.Tests/CreServicing.Core.Tests.csproj" />
+    <Project Path="tests/CreServicing.Api.Tests/CreServicing.Api.Tests.csproj" />
+    <Project Path="tests/CreServicing.Core.Eval/CreServicing.Core.Eval.csproj" />
   </Folder>
 </Solution>

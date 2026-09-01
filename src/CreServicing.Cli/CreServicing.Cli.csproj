@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The console entry point, and nothing else. Everything it does lives in
+       CreServicing.Core; this project owns argument parsing, Ctrl+C, and the
+       interactive approval prompt — the three things that are true of a
+       terminal and not of an HTTP request. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CreServicing.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CreServicing.Core\CreServicing.Core.csproj" />
+  </ItemGroup>
+
+</Project>

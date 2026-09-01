@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Stage B and C of "host it properly". The API adds no domain logic of its
+       own — every endpoint resolves something out of CreServicing.Core and
+       shapes the result for the wire. If a rule lives here that is not in Core,
+       it is in the wrong project and the CLI will disagree with the API about
+       it. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CreServicing.Api</RootNamespace>
+    <!-- The integration tests drive the pipeline through WebApplicationFactory,
+         which needs the entry point to be reachable from the test assembly. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The generated OpenAPI document is the cheapest possible answer to "what
+         does this service expose", and it is mapped only in Development — an
+         unauthenticated schema endpoint in production is a free reconnaissance
+         gift. -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+
+    <!-- Pinned above what Microsoft.AspNetCore.OpenApi drags in transitively.
+         The version it resolves to on its own carries GHSA-v5pm-xwqc-g5wc, which
+         CI reports as NU1903 and, because CI builds with -warnaserror, fails the
+         build. Raising the transitive dependency directly is the fix; suppressing
+         the warning would be turning off the thing that found it. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.12.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CreServicing.Core\CreServicing.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CreServicing.Api.Tests" />
+  </ItemGroup>
+
+</Project>

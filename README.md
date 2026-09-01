@@ -22,17 +22,18 @@ in `Domain/CovenantEngine.cs`, which contains no model call and never will.
 
 ---
 
-## The five things worth looking at
+## The six things worth looking at
 
 If you have five minutes, these are the decisions I would want reviewed.
 
 | | Where |
 | --- | --- |
-| **1. The model is not allowed to decide anything** | [`Domain/CovenantEngine.cs`](src/CreServicing.Agent/Domain/CovenantEngine.cs) |
-| **2. A real bug, diagnosed as structural and fixed structurally** | [`Tools/ServicingTools.cs`](src/CreServicing.Agent/Tools/ServicingTools.cs) |
-| **3. Tools sorted by blast radius, exactly one gated** | [`Agents/ServicingAgentHost.cs`](src/CreServicing.Agent/Agents/ServicingAgentHost.cs) |
-| **4. Extraction accuracy is measured, not asserted** | [`tests/CreServicing.Agent.Eval/`](tests/CreServicing.Agent.Eval) |
-| **5. Cost per package is a number, not a hope** | [`Cost/ModelCost.cs`](src/CreServicing.Agent/Cost/ModelCost.cs) |
+| **1. The model is not allowed to decide anything** | [`Domain/CovenantEngine.cs`](src/CreServicing.Core/Domain/CovenantEngine.cs) |
+| **2. A real bug, diagnosed as structural and fixed structurally** | [`Tools/ServicingTools.cs`](src/CreServicing.Core/Tools/ServicingTools.cs) |
+| **3. Tools sorted by blast radius, exactly one gated** | [`Agents/ServicingRunner.cs`](src/CreServicing.Core/Agents/ServicingRunner.cs) |
+| **4. A human-approval loop that survives being put behind HTTP** | [`Runs/ServicingRun.cs`](src/CreServicing.Core/Runs/ServicingRun.cs) |
+| **5. Extraction accuracy is measured, not asserted** | [`tests/CreServicing.Core.Eval/`](tests/CreServicing.Core.Eval) |
+| **6. Cost per package is a number, not a hope** | [`Cost/ModelCost.cs`](src/CreServicing.Core/Cost/ModelCost.cs) |
 
 ### 1. The model is not allowed to decide anything
 
@@ -40,7 +41,7 @@ If you have five minutes, these are the decisions I would want reviewed.
 figures and asks for a verdict; it does not get to produce one. Everything the model
 touches sits strictly upstream of `CovenantEngine.Evaluate`.
 
-The property this buys: **same inputs, same findings, every run, forever.** 71 tests
+The property this buys: **same inputs, same findings, every run, forever.** 76 tests
 assert it, including determinism across 50 consecutive evaluations and byte-identical
 evidence strings under `hi-IN`, `de-DE` and `ja-JP` locales — because a breach filed
 from Bangalore and one filed from Frankfurt have to produce the same audit record, not
@@ -112,9 +113,61 @@ Approvals are keyed to loan + finding code and **consumed on use**: one approval
 authorises exactly one write. A second filing under the same code lands in the ledger
 as `UNATTRIBUTED` rather than silently inheriting the first one's approval.
 
-### 4. Extraction accuracy is measured, not asserted
+### 4. A human-approval loop that survives being put behind HTTP
 
-`tests/CreServicing.Agent.Eval/` grades all four extractors against
+The console loop worked for a reason that does not generalise: `Console.ReadLine()`
+blocks, so the agent session, the tool trace, the accumulated token usage and the
+pending request all sat on the stack for as long as a person took to answer.
+
+**There is no stack behind HTTP.** The request that asks the question has to return,
+and a different request — minutes later, possibly to a different instance — has to
+pick the run up exactly where it stopped. That is a design problem, not a port, and it
+is the whole of what `Runs/` is for.
+
+The state machine is two methods rather than a loop. `StartAsync` runs until the agent
+either finishes or asks for something; `ResumeAsync` takes the answers and continues.
+**The caller owns the loop**, and the caller is a terminal in
+[`ConsoleApprovalLoop`](src/CreServicing.Cli/ConsoleApprovalLoop.cs) and two HTTP
+requests in [`ServicingRunEndpoints`](src/CreServicing.Api/ServicingRunEndpoints.cs).
+Neither host can drift from the other on a safety property, because neither host owns
+one.
+
+What made it genuinely resumable rather than merely cached is that MAF exposes
+`SerializeSessionAsync`/`DeserializeSessionAsync`. The conversation the agent has had —
+every document it read before it asked — is *storable*, not just holdable. So a
+suspended run is a JSON document, and `IRunStore` is the one seam a real deployment
+replaces.
+
+Three decisions in there worth arguing with:
+
+- **The in-memory store serializes on save and deserializes on load** rather than
+  handing back the object it was given. That is slower and it is the point: it makes
+  the store behave like a real one, so "can this run actually be persisted?" is
+  answered by every test that touches it. A run that quietly held a live
+  `AgentSession` would pass against a store that returned the same reference and fail
+  the first time it met Redis.
+- **A duplicate approval submission cannot file twice.** An impatient operator
+  double-clicking is not exotic, and over HTTP a retry is the default behaviour of half
+  the clients in existence. A per-run lock serialises the two, and then the second one
+  loads state in which those request ids are no longer outstanding and gets a 400.
+  The lock alone would only have made the double-file sequential. Across two instances
+  the right mechanism is optimistic concurrency on the stored record, which is where it
+  belongs — in the store, when there is one.
+- **A partial submission is refused, not treated as rejection.** Reading "no answer" as
+  "no" would file nothing and look identical to an operator who declined. That is the
+  wrong thing to be ambiguous about.
+
+Both pieces of static mutable state are gone as part of this, and not by adding locks.
+`ExceptionLedger` and `ApprovalLedger` are now **owned by a run**, and the agent for a
+run holds the only reference to that run's tool instance — so two concurrent reviews
+cannot see each other's filings by construction rather than by convention. The most
+direct evidence is in the diff: `WriteGateTests` used to carry
+`[CollectionDefinition(DisableParallelization = true)]` and a `Clear()` in its
+constructor, and both could simply be deleted.
+
+### 5. Extraction accuracy is measured, not asserted
+
+`tests/CreServicing.Core.Eval/` grades all four extractors against
 `fixtures/golden/expected-extractions.json` — 9 hand-verified documents, field-level,
 exact match on every numeric field. Live model calls, no record/replay.
 
@@ -141,7 +194,7 @@ about: it helps and it never guarantees. The actual guarantee is structural — 
 covenant decision is made in C# from typed numbers, and no sentence in a PDF can reach
 that code path.
 
-### 5. Cost per package is a number, not a hope
+### 6. Cost per package is a number, not a hope
 
 `--extract-snapshot` prints the real figure at the end of every run. `CRE-2019-0447`,
 three documents, `gpt-5-mini`:
@@ -201,10 +254,10 @@ is visibly stale rather than quietly wrong.
 ```powershell
 # The covenant review across all three synthetic loans.
 # No Azure call, no key, no cost — the deterministic half runs on its own.
-dotnet run --project src/CreServicing.Agent
+dotnet run --project src/CreServicing.Cli
 
 # One loan
-dotnet run --project src/CreServicing.Agent -- CRE-2019-0447
+dotnet run --project src/CreServicing.Cli -- CRE-2019-0447
 ```
 
 ```
@@ -228,10 +281,10 @@ The paths below call a model — they cost money and need `az login`:
 ```powershell
 # Assemble the FinancialSnapshot from the borrower's real documents and show it
 # beside the hand-keyed one, with both sets of covenant findings and the cost.
-dotnet run --project src/CreServicing.Agent -- --extract-snapshot CRE-2019-0447
+dotnet run --project src/CreServicing.Cli -- --extract-snapshot CRE-2019-0447
 
 # The agent: tool loop, with the one write behind human approval.
-dotnet run --project src/CreServicing.Agent -- --agent CRE-2019-0447
+dotnet run --project src/CreServicing.Cli -- --agent CRE-2019-0447
 ```
 
 `--extract-snapshot` exists to prove a claim rather than assert it: the snapshot
@@ -240,16 +293,80 @@ hand-keyed one. The single expected divergence is `LTV-UNTESTED` — no appraisa
 document exists in these fixtures, and an untested covenant is reported as a finding
 rather than left to be inferred from an absence.
 
+### The same thing over HTTP
+
+```powershell
+dotnet run --project src/CreServicing.Api
+```
+
+**The API starts with no Azure configuration at all**, and that is deliberate rather
+than lax. Most of the surface is deterministic C# that needs no credential, and it is
+the part that must never be unavailable, because it is the audit-grade path. A web host
+that crash-loops because extraction is unconfigured takes the covenant endpoints down
+to protect endpoints nobody called. The routes that do need a model answer **503 naming
+the missing setting** instead — and `/health` reports which half is working rather than
+calling itself unhealthy, so a load balancer does not pull an instance that is serving
+the deterministic path perfectly well.
+
+| | Route | Needs a model |
+| --- | --- | --- |
+| Liveness, and whether this instance can reach a model | `GET /health` | no |
+| Loans in the system of record | `GET /loans`, `GET /loans/{id}` | no |
+| Covenant findings, computed in C# | `GET /loans/{id}/covenant-review` | no |
+| What the borrower submitted — names and sizes, never content | `GET /loans/{id}/documents` | no |
+| Extract a snapshot and compare it with the hand-keyed one | `POST /loans/{id}/financial-snapshot` | **yes** |
+| Start a review | `POST /servicing-runs` | **yes** |
+| What a run is, and what it is waiting for | `GET /servicing-runs`, `GET /servicing-runs/{id}` | no |
+| Answer every outstanding approval and resume | `POST /servicing-runs/{id}/approvals` | **yes** |
+| What actually landed on the loan file | `GET /servicing-runs/{id}/ledger` | no |
+
+The approval loop over HTTP, end to end. `POST` a run; it comes back `201` with status
+`AwaitingApproval` and the arguments it wants authorised:
+
+```jsonc
+{
+  "runId": "8f2c…", "status": "AwaitingApproval", "round": 1,
+  "awaitingApproval": [{
+    "requestId": "…",
+    "tool": "CreateServicingException",
+    "arguments": { "loanId": "CRE-2019-0447", "code": "DSCR-MIN", "severity": "Breach", … }
+  }],
+  "filed": [],                       // the gate holding: nothing written while it waits
+  "cost": { "inputTokens": 4210, "modelCalls": 1, "usd": 0.001 }
+}
+```
+
+Then `POST /servicing-runs/{id}/approvals` with a decision per `requestId`, and the run
+resumes. Note what is *not* in that payload: the serialized agent session. It is the
+entire conversation including every document the agent read, it is storage rather than
+a contract, and a test asserts it never reaches the wire.
+
+Two details in the response that are there on purpose. `cost` appears on every reply,
+including the ones that suspend — a run that has paused three times has already spent
+the money for three rounds, and the operator deciding whether to continue should be
+looking at that number. And `autoApproved` lists calls the framework swept into an
+approval round by batching that the runner resolved itself: visible in the audit trail,
+never put to a human as a question.
+
 ### Prerequisites
+
+Only for the model-backed paths. The deterministic ones need none of this.
 
 | Setting | Value |
 | --- | --- |
-| `AZURE_OPENAI_ENDPOINT` | `https://maf-course-db26.openai.azure.com/` |
-| `AZURE_OPENAI_DEPLOYMENT_NAME` | `gpt-5-mini` |
-| Auth | `AzureCliCredential` — needs `az login` and the *Cognitive Services OpenAI User* role |
+| `AzureOpenAI:Endpoint` (or `AZURE_OPENAI_ENDPOINT`) | `https://maf-course-db26.openai.azure.com/` |
+| `AzureOpenAI:Deployment` (or `AZURE_OPENAI_DEPLOYMENT_NAME`) | `gpt-5-mini` |
+| Auth | `DefaultAzureCredential` — `az login` locally, managed identity in Azure, same binary either way |
 
-Both env vars are set at Windows user level, so restart any terminal or IDE opened
-before they were set.
+The bare `AZURE_OPENAI_*` variables are honoured as a fallback so an existing machine
+keeps working, but they only ever fill gaps: an explicitly configured
+`AzureOpenAI:Endpoint` wins over one left in the environment by something else. Both
+env vars are set at Windows user level, so restart any terminal or IDE opened before
+they were set.
+
+The CLI and the API differ on one thing deliberately. The CLI validates at startup and
+exits `1` naming the missing key, because a console process exists to do the one
+model-backed thing it was invoked for. The API starts anyway, for the reason above.
 
 ## Tests
 
@@ -257,8 +374,7 @@ before they were set.
 dotnet test
 ```
 
-**75 tests, ~240ms, no credentials and no network.** Everything under test is a pure
-function, which is the point rather than a convenience. What they pin:
+**111 tests, well under a second, no credentials and no network.** What they pin:
 
 - **The band edges, not the middles.** A DSCR three points clear of its floor passes
   under any plausible implementation. A DSCR sitting *exactly* on the floor is where
@@ -289,6 +405,22 @@ function, which is the point rather than a convenience. What they pin:
   the table, and that an unknown deployment degrades to "unpriced" rather than throwing
   partway through a covenant review.
 
+The approval loop is tested too, and that is newer than the rest. A scripted
+`IChatClient` replays a fixed sequence of turns, so the entire suspend/resume state
+machine runs with no Azure call and no cost — which is only possible because stage A
+converted the runner and extractors to take an injected `IChatClient`. It pins that a
+gated call suspends instead of executing, that an approved filing lands attributed to
+the operator with its own time-to-decision, that a rejected one writes nothing, that a
+read batched alongside a filing is never put to the human, that a partial submission is
+refused, and that **a run resumed after a full round trip through storage still
+works** — the test that separates a persisted run from a cached one. The same machine
+is then driven over HTTP through `WebApplicationFactory` in
+`tests/CreServicing.Api.Tests/`, including that a duplicate approval submission cannot
+file the exception twice.
+
+What still needs a live model is whether the *model* behaves. That is the eval
+harness's job, deliberately in a different project with a different budget.
+
 One test is deliberately skipped rather than deleted: a loan *past* its maturity date
 currently produces no finding at all, because the horizon check guards with
 `daysToMaturity >= 0`. A matured unpaid loan is the most serious state in servicing, so
@@ -303,21 +435,35 @@ CI runs this suite on every push and pull request.
 my-agent-lab/
 ├── .github/workflows/ci.yml            # build + test on every push and PR
 ├── tests/
-│   ├── CreServicing.Agent.Tests/       # free: boundaries, determinism, culture, write gate, cost
-│   └── CreServicing.Agent.Eval/        # costs money: extraction accuracy vs. the golden set
-└── src/CreServicing.Agent/
-    ├── Domain/                         # Covenants, CovenantEngine — no model call, ever
-    ├── Extraction/                     # four extractors + FinancialSnapshotAssembler
-    ├── Tools/                          # ServicingTools — four reads, one gated write
-    ├── Agents/                         # ServicingAgentHost — tool loop and the HITL gate
-    ├── Data/                           # system of record, document store, ledger, approvals
-    ├── Cost/                           # tokens, rates, per-package cost, portfolio projection
-    └── fixtures/
-        ├── CRE-2019-0447/              #   distressed office — four documents, four breaches
-        ├── CRE-2021-0912/              #   healthy multifamily — must produce a CLEAN report
-        ├── adversarial/                #   rent roll carrying a prompt injection
-        └── golden/                     #   expected-extractions.json — the eval answer key
+│   ├── CreServicing.Core.Tests/        # free: boundaries, determinism, culture, write gate,
+│   │                                   #   cost, and the suspend/resume state machine
+│   ├── CreServicing.Api.Tests/         # free: the HTTP surface, via WebApplicationFactory
+│   └── CreServicing.Core.Eval/         # costs money: extraction accuracy vs. the golden set
+└── src/
+    ├── CreServicing.Core/              # the library — knows nothing about how it is invoked
+    │   ├── Domain/                     #   Covenants, CovenantEngine — no model call, ever
+    │   ├── Extraction/                 #   four extractors + FinancialSnapshotAssembler
+    │   ├── Tools/                      #   ServicingTools — four reads, one gated write
+    │   ├── Agents/                     #   ServicingRunner — start and resume, no console
+    │   ├── Runs/                       #   suspended-run state, the store, the run service
+    │   ├── Data/                       #   system of record, document store, ledger, approvals
+    │   ├── Configuration/              #   the composition root, options, credential
+    │   ├── Cost/                       #   tokens, rates, per-package cost, portfolio projection
+    │   └── fixtures/
+    │       ├── CRE-2019-0447/          #     distressed office — four documents, four breaches
+    │       ├── CRE-2021-0912/          #     healthy multifamily — must produce a CLEAN report
+    │       ├── adversarial/            #     rent roll carrying a prompt injection
+    │       └── golden/                 #     expected-extractions.json — the eval answer key
+    ├── CreServicing.Cli/               # argument parsing, Ctrl+C, the interactive prompt
+    └── CreServicing.Api/               # minimal API over the same library
 ```
+
+The split is stage B's whole premise: an ASP.NET Core host cannot sensibly reference a
+console `Exe`, so everything that does not know how it is being invoked moved into a
+library and the two things that do — a terminal and a web host — sit beside it. The
+API adds no domain logic of its own. If a rule lived there and not in `Core`, the CLI
+and the API could disagree about whether a covenant was breached, and one of them would
+be wrong.
 
 A third loan, `CRE-2018-0233`, exists in `MockServicingSystem` with **no fixture
 package at all** — that is the "no documents on file" path, and it stays hand-keyed by
@@ -338,21 +484,19 @@ pretending otherwise is worse than the gap.
 - **Retrieval over the loan agreement.** `ServicingException.ClauseCitation` is a slot
   that stays null. An exception quoting section 7.3(b) is a document a servicer can
   send; one that says "DSCR is low" is not.
-- **An HTTP surface.** The composition root now exists — `IChatClient` and every
-  extractor come from a container, config binds to a validated `IOptions`, the
-  credential is `DefaultAzureCredential` so the same binary authenticates with a
-  managed identity in Azure, calls are bounded and cancellable, and Ctrl+C unwinds a
-  half-finished run instead of abandoning the ledger mid-filing. What is still missing
-  is the endpoint itself. The interesting part was never the boilerplate: the approval
-  loop works *because* `Console.ReadLine()` blocks and holds the run in memory, so a
-  suspended run over HTTP has to be persisted and resumed across two requests. That is
-  a design problem, not a port, and it is the reason this is staged rather than done in
-  one go.
-- **Somewhere to put the state.** `ExceptionLedger` is a static `List<>` and
-  `ApprovalContext` an `AsyncLocal` — both correct for one operator and one run in
-  flight, both a data race the moment two requests share a process. The `AsyncLocal`
-  already documents itself as a shortcut. Fixing them is the same piece of work as the
-  suspended-run persistence above, which is why neither is done piecemeal.
+- **Durable run storage.** The suspended-run problem is solved; *where* the run lives
+  is not. `IRunStore` has one in-memory implementation, so a run does not survive a
+  restart and two instances do not share one. That boundary is deliberate and the
+  interface exists for exactly this reason — but an interface is not an implementation,
+  and the honest statement is that this runs correctly on one process. The per-run lock
+  that stops a duplicate approval filing twice has the same limit: correct in one
+  process, worthless across two, where the answer is optimistic concurrency on the
+  stored record.
+- **Authentication, and therefore a trustworthy approver.** The API takes the
+  approver's name from the request body. The entire value of that field is that the
+  person approving cannot choose what it says about them, so in any real deployment it
+  comes from the authenticated principal and the parameter does not exist. Every
+  endpoint is unauthenticated; this is a lab.
 - **A consistent clock for audit records.** `ExceptionLedger` stamps reference numbers
   and `FiledAt` from `DateTime.UtcNow`; the review date comes from `DateTime.Today`,
   which is local. Run from UTC+5:30 late in the day, one ledger entry carries two
@@ -381,4 +525,4 @@ Package versions are pinned to match those samples (`Azure.AI.OpenAI 2.9.0-beta.
 deliberately, not by accident.
 
 The section-by-section roadmap, and the reasoning behind each decision above, lives in
-the comment block at the bottom of `src/CreServicing.Agent/Program.cs`.
+the comment block at the bottom of `src/CreServicing.Cli/Program.cs`.
