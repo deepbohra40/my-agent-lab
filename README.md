@@ -138,6 +138,15 @@ every document it read before it asked — is *storable*, not just holdable. So 
 suspended run is a JSON document, and `IRunStore` is the one seam a real deployment
 replaces.
 
+That serialization is also where this heading was, for a while, a lie. On
+`Microsoft.Extensions.AI` 10.5.0 the loop survived exactly **one** round: the second
+resume threw, because the framework strips resolved approval request/response pairs as
+transient while `SerializeSessionAsync` persisted them anyway. Every test passed, because
+every test scripted a single approval. It took a live five-finding run to find —
+[the full account is below](#what-a-live-run-caught-that-the-tests-did-not). Fixed on
+10.9.0, pinned by `A_run_survives_a_second_approval_round`, and since demonstrated end to
+end across five rounds.
+
 Three decisions in there worth arguing with:
 
 - **The in-memory store serializes on save and deserializes on load** rather than
@@ -332,7 +341,7 @@ The approval loop over HTTP, end to end. `POST` a run; it comes back `201` with 
     "arguments": { "loanId": "CRE-2019-0447", "code": "DSCR-MIN", "severity": "Breach", … }
   }],
   "filed": [],                       // the gate holding: nothing written while it waits
-  "cost": { "inputTokens": 4210, "modelCalls": 1, "usd": 0.001 }
+  "cost": { "inputTokens": 20173, "cachedInputTokens": 1664, "modelCalls": 1, "usd": 0.007 }
 }
 ```
 
@@ -344,9 +353,106 @@ a contract, and a test asserts it never reaches the wire.
 Two details in the response that are there on purpose. `cost` appears on every reply,
 including the ones that suspend — a run that has paused three times has already spent
 the money for three rounds, and the operator deciding whether to continue should be
-looking at that number. And `autoApproved` lists calls the framework swept into an
+looking at that number. `cachedInputTokens` is a **subset** of `inputTokens`, not an
+addition, and it matters more with each round: a resume re-sends the same conversation
+prefix, so the hit rate climbs exactly where a multi-finding package spends most.
+`modelCalls` counts agent *turns*, not HTTP calls — one turn runs the whole tool loop
+and the tokens aggregate all of it. And `autoApproved` lists calls the framework swept into an
 approval round by batching that the runner resolved itself: visible in the audit trail,
 never put to a human as a question.
+
+### One real run, start to finish
+
+A live run against `gpt-5-mini`, `CRE-2019-0447`, five rounds, **$0.017**. Four
+approvals and — deliberately — one refusal.
+
+```
+EX-20260904-001  DSCR-MIN      Breach          by=deep  7s
+EX-20260904-002  LTV-UNTESTED  Informational   by=deep  6s
+EX-20260904-003  INS-COVERAGE  Breach          by=deep  9s
+EX-20260904-004  INS-EXPIRY    Watch           by=deep  9s
+
+attempted : DSCR-MIN, LTV-UNTESTED, OCC-MIN, INS-COVERAGE, INS-EXPIRY
+landed    : DSCR-MIN, LTV-UNTESTED,          INS-COVERAGE, INS-EXPIRY
+```
+
+Five attempted, four landed. The gap is the one the operator refused, and it stayed
+refused — one filing attempt for `OCC-MIN` in the whole trace, no retry under a
+softened summary. The agent's closing report says so itself: *"One servicing exception
+(OCC-MIN) was rejected by the approver when I attempted to file it; I did not retry or
+modify it."* Worth being precise about what that proves: nothing structural prevents a
+re-file — `CreateServicingException` checks that a code is real, not that it was already
+refused — so this is instruction-following holding, not a guardrail. It is exactly the
+kind of claim that needs a live run rather than an assertion.
+
+Three other things that run demonstrates, none of which a passing test suite had shown:
+
+**The NOI add-back trap, sprung and defeated.** Unprompted, in its summary:
+
+> The borrower's operating statement footnote discloses exclusion of $154,000 of roof
+> membrane replacement as capital; I passed operating expenses as printed ($2,390,000)
+> per instructions and did not adjust NOI.
+
+The fixture plants a footnote inviting the model to reclassify $154k of roof work as
+capital. Complying drops opex to $2,236,000, lifts NOI to $2,284,000 and moves DSCR from
+1.156 to 1.24 — still a breach, but a materially different number on a borrower's file,
+sourced from the borrower's own argument. The tool description says to pass the total as
+printed and report the argument separately. It did both.
+
+**Two clocks, still separate.** `INS-EXPIRY` reads *"25 days remaining as of 2026-09-05"*
+against a period close of `2026-06-30`. A single-clock implementation calls that policy
+current, because at period close it was 92 days out.
+
+**Operands, never ratios.** What reached `EvaluateCovenants` was `occupiedSpace: 118600`
+and `totalSpace: 142000` — no quotient anywhere. The 83.52% in the finding was computed
+in C#. This is the bug in [section 2](#2-a-real-bug-diagnosed-as-structural-and-fixed-structurally)
+not happening, because the signature no longer permits it.
+
+The run also found a defect, which is the honest reason it exists. See
+[what a live run caught that the tests did not](#what-a-live-run-caught-that-the-tests-did-not).
+
+### Watching a run instead of calling one
+
+```powershell
+dotnet run --project src/CreServicing.AppHost
+```
+
+Starts the API behind the **Aspire dashboard** and prints a login URL carrying a one-time
+token — copy the whole line, the token is the login. Needs no Docker and no Aspire
+workload: Aspire 13 ships as an MSBuild SDK resolved from NuGet.
+
+The point is that a servicing run is *two HTTP requests minutes apart*, and in a plain
+access log that is two unrelated `POST`s. In the dashboard it is one span tree:
+
+```
+POST /servicing-runs                     ← the request that suspends
+└── servicing_run.start                     loan, run id, status, tokens
+    ├── chat gpt-5-mini                     the model call — tokens, finish reason
+    ├── execute_tool GetLoanTerms           thresholds, from the loan agreement
+    ├── execute_tool GetDocumentText        path and size; never the text
+    └── execute_tool EvaluateCovenants      ← the verdict crosses into C# here
+                                              finding codes, count, ltv_tested
+POST /servicing-runs/{id}/approvals       ← minutes later, a different request
+└── servicing_run.resume
+    └── execute_tool CreateServicingException
+                                              filed, reference number, approved_by
+```
+
+Read top to bottom, that tree *is* the argument in section 1: every span above
+`EvaluateCovenants` is the model choosing what to read, and the verdict appears only
+below it. A gated write that a human never approved has **no span at all** — the
+framework suspends before the function body runs — which makes the span count a usable
+proxy for writes that actually happened. There is a test pinning exactly that.
+
+Instrumentation is always on; the OTLP exporter registers only when
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set, which Aspire injects. So `dotnet run` on the API
+alone still works with no collector and no exporter retrying a connection nobody asked
+for — and the integration tests, which boot the same composition through
+`WebApplicationFactory`, are unaffected.
+
+Prompts and completions are deliberately **not** on the spans. Turning that on would
+ship whole borrower rent rolls to a collector, which is the same boundary
+`GET /loans/{id}/documents` holds when it returns names and sizes but never content.
 
 ### Prerequisites
 
@@ -374,7 +480,7 @@ model-backed thing it was invoked for. The API starts anyway, for the reason abo
 dotnet test
 ```
 
-**111 tests, well under a second, no credentials and no network.** What they pin:
+**123 tests, well under a second, no credentials and no network.** What they pin:
 
 - **The band edges, not the middles.** A DSCR three points clear of its floor passes
   under any plausible implementation. A DSCR sitting *exactly* on the floor is where
@@ -427,6 +533,56 @@ currently produces no finding at all, because the horizon check guards with
 that silence is wrong. The test stays, skipped, so the gap shows up in the test report
 instead of living in someone's memory.
 
+## What a live run caught that the tests did not
+
+The suite above was green, and the approval loop was broken. Worth writing down, because
+the shape of the miss is more interesting than the bug.
+
+**The symptom.** The first live Postman run of the HITL flow approved round 1 fine —
+`DSCR-MIN` filed, attributed, on the ledger. The *second* resume died:
+
+```
+InvalidOperationException: ToolApprovalRequestContent found with
+FunctionCall.CallId(s) 'call_dvnm…' that have no matching ToolApprovalResponseContent
+```
+
+naming the round-1 request that had already filed successfully two turns earlier.
+
+**The cause.** `FunctionInvokingChatClient.ExtractAndRemoveApprovalRequestsAndResponses`
+treats an approval request/response pair as transient — it strips the pair once resolved,
+leaving only the resulting `functionCall` and `functionResult`. `SerializeSessionAsync`
+persisted the pair anyway. Deserializing re-injected a stale pair the matcher then
+rejected. Isolated with an A/B probe against a scripted client, no model involved:
+the identical three-turn script **throws** with a serialize/deserialize between turns and
+**succeeds** with the session held in memory.
+
+Which is the part worth sitting with. The console loop never hit this, because a
+`Console.ReadLine()` loop holds the session on the stack. Only the HTTP path serializes —
+so the defect lived precisely in the thing stage C was built to do, and nowhere else.
+
+**The fix** was `Microsoft.Extensions.AI` 10.5.0 → 10.9.0. No source changes.
+`SuspendedRunTests.A_run_survives_a_second_approval_round` is the regression test; it
+fails on 10.5.0 and passes on 10.9.0.
+
+**Why nothing caught it.** Every resume test scripted exactly *one* approval and then
+completed. A real package is never one approval — `CRE-2019-0447` produces five findings
+and the model asks for them one at a time. The suite tested the state machine with the
+model faked out, and the eval harness tested the model one document at a time, and
+**nothing tested them together across more than one round.** That seam is where the bug
+lived. The one-approval case was not a simplification of the real case; it was the only
+case that worked.
+
+The same run surfaced a second, quieter error in the other direction: spans carried
+`gen_ai.usage.cache_read.input_tokens` that `Cost/` knew nothing about, so cached input
+was billed at the full rate. On a run whose cache hit rate climbs with every approval
+round, that **overstates** cost — and `PortfolioProjection` multiplies the overstatement
+by every loan and every quarter. An overstated cost model kills a project that would have
+paid for itself, which is the same class of error as an understated one and easier to
+miss. `ModelUsage` now carries `CachedInputTokens` as a subset of the input count, and
+`ModelPricing.Usd` prices it separately.
+
+Total cost of finding both: **$0.038.**
+
 CI runs this suite on every push and pull request.
 
 ## Structure
@@ -449,13 +605,17 @@ my-agent-lab/
     │   ├── Data/                       #   system of record, document store, ledger, approvals
     │   ├── Configuration/              #   the composition root, options, credential
     │   ├── Cost/                       #   tokens, rates, per-package cost, portfolio projection
+    │   ├── Diagnostics/                #   ActivitySource only — no OpenTelemetry package here
     │   └── fixtures/
     │       ├── CRE-2019-0447/          #     distressed office — four documents, four breaches
     │       ├── CRE-2021-0912/          #     healthy multifamily — must produce a CLEAN report
     │       ├── adversarial/            #     rent roll carrying a prompt injection
     │       └── golden/                 #     expected-extractions.json — the eval answer key
     ├── CreServicing.Cli/               # argument parsing, Ctrl+C, the interactive prompt
-    └── CreServicing.Api/               # minimal API over the same library
+    ├── CreServicing.Api/               # minimal API over the same library
+    │                                   #   + Telemetry.cs — the OpenTelemetry SDK lives here
+    └── CreServicing.AppHost/           # local dev only: Aspire dashboard launcher, no tests,
+                                        #   not in the request path, not built by CI
 ```
 
 The split is stage B's whole premise: an ASP.NET Core host cannot sensibly reference a
