@@ -116,9 +116,24 @@ public sealed record FiledExceptionResponse(
 /// money for three rounds and the operator deciding whether to continue should be
 /// looking at that number.
 /// </summary>
+/// <param name="CachedInputTokens">
+/// How many of <paramref name="InputTokens"/> the provider served from its prompt
+/// cache — a subset, never an addition.
+///
+/// Reported because the operator reading this is deciding whether to keep going,
+/// and on the agent path this number is the reason the next round is cheaper than
+/// the arithmetic suggests: each resume re-sends the same conversation prefix, so
+/// the hit rate climbs with every approval.
+/// </param>
+/// <param name="ModelCalls">
+/// Agent turns, not HTTP calls to the model. One turn runs the whole tool loop and
+/// may make a dozen round trips; the token counts aggregate all of them. The name
+/// is kept for wire compatibility and is worth reading with that in mind.
+/// </param>
 public sealed record RunCostResponse(
     long InputTokens,
     long OutputTokens,
+    long CachedInputTokens,
     int ModelCalls,
     int ToolCalls,
     string Deployment,
@@ -134,6 +149,7 @@ public sealed record RunCostResponse(
         return new RunCostResponse(
             run.Usage.InputTokens,
             run.Usage.OutputTokens,
+            run.Usage.EffectiveCachedInputTokens,
             run.ModelCalls,
             run.Trace.Count,
             run.Deployment,

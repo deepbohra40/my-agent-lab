@@ -89,6 +89,74 @@ public class ModelCostTests
         Assert.Equal(0.00065m, usd);
     }
 
+    // ── Prompt caching ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void Cached_input_is_billed_at_the_cached_rate_not_the_full_one()
+    {
+        // 1M input of which 800k came from cache: 200k at $0.25/1M plus 800k at
+        // a tenth of that, and no output.
+        //   fresh  200,000 / 1M * 0.25  = 0.05
+        //   cached 800,000 / 1M * 0.025 = 0.02
+        var usd = ModelPricing.Usd(new ModelUsage(1_000_000, 0, CachedInputTokens: 800_000), GptFiveMini);
+
+        Assert.Equal(0.07m, usd);
+
+        // The number this replaced. Billing all 1M at the full rate — which is
+        // what this did before the live run surfaced a cache_read tag on a span
+        // that the cost model knew nothing about — reads 3.5x too high.
+        Assert.Equal(0.25m, ModelPricing.Usd(new ModelUsage(1_000_000, 0), GptFiveMini));
+    }
+
+    [Fact]
+    public void Cached_tokens_are_a_subset_of_input_and_are_never_added_to_it()
+    {
+        // The failure mode worth pinning: reading the provider's cached count as
+        // additional rather than included. 4,564 input with 1,664 cached is one
+        // call of 4,564 tokens, not 6,228.
+        var usage = new ModelUsage(4_564, 86, CachedInputTokens: 1_664);
+
+        Assert.Equal(4_564, usage.InputTokens);
+        Assert.Equal(2_900, usage.BillableInputTokens);
+        Assert.Equal(4_650, usage.TotalTokens);
+    }
+
+    [Fact]
+    public void A_provider_reporting_more_cached_than_input_cannot_produce_a_negative_bill()
+    {
+        // Nonsense in, zero-or-positive out. Nothing should be able to make a
+        // covenant review report that it earned money.
+        var usage = new ModelUsage(100, 0, CachedInputTokens: 5_000);
+
+        Assert.Equal(0, usage.BillableInputTokens);
+        Assert.Equal(100, usage.EffectiveCachedInputTokens);
+        Assert.True(ModelPricing.Usd(usage, GptFiveMini) > 0m);
+    }
+
+    [Fact]
+    public void Unreported_caching_prices_exactly_as_it_did_before()
+    {
+        // A provider that says nothing about caching must not get a silent
+        // discount. Two-argument construction means "nothing cached", so this has
+        // to match the full-rate arithmetic to the last decimal.
+        Assert.Equal(
+            ModelPricing.Usd(new ModelUsage(600, 250), GptFiveMini),
+            ModelPricing.Usd(new ModelUsage(600, 250, CachedInputTokens: 0), GptFiveMini));
+    }
+
+    [Fact]
+    public void Summing_keeps_cached_tokens_alongside_the_rest()
+    {
+        var total = ModelUsage.Sum([
+            new ModelUsage(1_000, 100, CachedInputTokens: 400),
+            new ModelUsage(2_000, 200, CachedInputTokens: 1_500)
+        ]);
+
+        Assert.Equal(3_000, total.InputTokens);
+        Assert.Equal(300, total.OutputTokens);
+        Assert.Equal(1_900, total.CachedInputTokens);
+    }
+
     [Fact]
     public void Zero_usage_costs_nothing()
         => Assert.Equal(0m, ModelPricing.Usd(ModelUsage.None, GptFiveMini));

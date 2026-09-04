@@ -13,14 +13,42 @@ namespace CreServicing.Core.Cost;
 /// is unit-testable without an Azure call — same property the covenant engine has,
 /// for the same reason.
 /// </summary>
-public readonly record struct ModelUsage(long InputTokens, long OutputTokens)
+/// <param name="CachedInputTokens">
+/// How many of <paramref name="InputTokens"/> were served from the provider's
+/// prompt cache.
+///
+/// ── A SUBSET, not an addition ────────────────────────────────────────────────
+///
+/// This is the one thing to get right here, because getting it wrong is silent.
+/// The provider reports cached tokens as part of the input count, not alongside
+/// it: 4,564 input with 1,664 cached means 2,900 were billed at full rate and
+/// 1,664 at the cached rate — it does NOT mean 6,228 tokens were processed.
+/// Treating it as additive would inflate every figure this folder produces.
+///
+/// Defaulted so the two-argument construction used throughout the tests keeps
+/// meaning "nothing cached", which is the right reading of a provider that did
+/// not report it.
+/// </param>
+public readonly record struct ModelUsage(long InputTokens, long OutputTokens, long CachedInputTokens = 0)
 {
-    public static readonly ModelUsage None = new(0, 0);
+    public static readonly ModelUsage None = new(0, 0, 0);
 
     public long TotalTokens => InputTokens + OutputTokens;
 
+    /// <summary>
+    /// Input tokens actually billed at the full rate — the ones the cache did not
+    /// cover. Clamped because a provider reporting more cached than input is
+    /// reporting nonsense, and nonsense should not produce a negative bill.
+    /// </summary>
+    public long BillableInputTokens => InputTokens - EffectiveCachedInputTokens;
+
+    public long EffectiveCachedInputTokens => Math.Clamp(CachedInputTokens, 0, InputTokens);
+
     public static ModelUsage operator +(ModelUsage left, ModelUsage right)
-        => new(left.InputTokens + right.InputTokens, left.OutputTokens + right.OutputTokens);
+        => new(
+            left.InputTokens + right.InputTokens,
+            left.OutputTokens + right.OutputTokens,
+            left.CachedInputTokens + right.CachedInputTokens);
 
     public static ModelUsage Sum(IEnumerable<ModelUsage> usages)
         => usages.Aggregate(None, static (running, next) => running + next);
@@ -35,7 +63,23 @@ public readonly record struct ModelUsage(long InputTokens, long OutputTokens)
 /// schemas here are kept narrow: every field the extractor is asked to return is
 /// billed at the output rate on every document, forever.
 /// </summary>
-public sealed record ModelRate(string Deployment, decimal InputUsdPer1M, decimal OutputUsdPer1M);
+/// <param name="CachedInputUsdPer1M">
+/// The rate for input tokens served from the prompt cache.
+///
+/// Not a rounding detail on the agent path. A servicing run re-sends the whole
+/// conversation on every resume, so the cache hit rate climbs with each approval
+/// round — exactly where a multi-finding package spends the most. Billing those
+/// at the full input rate overstates the run, and
+/// <see cref="PortfolioProjection.AnnualUsd"/> then multiplies the overstatement
+/// by every loan and every quarter. An overstated cost model kills a project that
+/// would have paid for itself, which is the same class of error as an understated
+/// one and rather easier to miss.
+/// </param>
+public sealed record ModelRate(
+    string Deployment,
+    decimal InputUsdPer1M,
+    decimal OutputUsdPer1M,
+    decimal CachedInputUsdPer1M);
 
 public static class ModelPricing
 {
@@ -55,12 +99,20 @@ public static class ModelPricing
     /// </summary>
     public const decimal UsdToInr = 88m;
 
+    /// <summary>
+    /// Cached input is priced at a tenth of fresh input across this family, which
+    /// is the published convention rather than a figure read off an invoice —
+    /// same caveat as <see cref="PricedAsOf"/>, and the first thing to check if
+    /// these numbers are ever quoted at anyone.
+    /// </summary>
+    private const decimal CachedInputDiscount = 0.10m;
+
     private static readonly IReadOnlyDictionary<string, ModelRate> Rates =
         new Dictionary<string, ModelRate>(StringComparer.OrdinalIgnoreCase)
         {
-            ["gpt-5-mini"] = new("gpt-5-mini", InputUsdPer1M: 0.25m, OutputUsdPer1M: 2.00m),
-            ["gpt-5"] = new("gpt-5", InputUsdPer1M: 1.25m, OutputUsdPer1M: 10.00m),
-            ["gpt-5-nano"] = new("gpt-5-nano", InputUsdPer1M: 0.05m, OutputUsdPer1M: 0.40m)
+            ["gpt-5-mini"] = new("gpt-5-mini", 0.25m, 2.00m, 0.25m * CachedInputDiscount),
+            ["gpt-5"] = new("gpt-5", 1.25m, 10.00m, 1.25m * CachedInputDiscount),
+            ["gpt-5-nano"] = new("gpt-5-nano", 0.05m, 0.40m, 0.05m * CachedInputDiscount)
         };
 
     /// <summary>
@@ -74,8 +126,16 @@ public static class ModelPricing
     public static ModelRate? For(string deployment)
         => Rates.TryGetValue(deployment, out var rate) ? rate : null;
 
+    /// <summary>
+    /// Three lines, not two, because cached input is not free — it is cheap. The
+    /// split is <see cref="ModelUsage.BillableInputTokens"/> at the full rate plus
+    /// the cached remainder at the discounted one, which relies on cached tokens
+    /// being a subset of the input count. See the note on
+    /// <see cref="ModelUsage.CachedInputTokens"/>.
+    /// </summary>
     public static decimal Usd(ModelUsage usage, ModelRate rate)
-        => (usage.InputTokens / 1_000_000m * rate.InputUsdPer1M)
+        => (usage.BillableInputTokens / 1_000_000m * rate.InputUsdPer1M)
+           + (usage.EffectiveCachedInputTokens / 1_000_000m * rate.CachedInputUsdPer1M)
            + (usage.OutputTokens / 1_000_000m * rate.OutputUsdPer1M);
 }
 

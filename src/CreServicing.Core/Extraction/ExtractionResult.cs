@@ -42,6 +42,13 @@ internal static class UsageMapping
 {
     public static ModelUsage ToModelUsage(this AgentResponse response)
         => response.Usage is { } usage
-            ? new ModelUsage(usage.InputTokenCount ?? 0, usage.OutputTokenCount ?? 0)
+            ? new ModelUsage(
+                usage.InputTokenCount ?? 0,
+                usage.OutputTokenCount ?? 0,
+                // Reported as part of InputTokenCount, not in addition to it. A
+                // provider that does not report caching leaves this null, which
+                // maps to zero cached and therefore to the old full-rate
+                // arithmetic — the safe direction to be wrong in.
+                usage.CachedInputTokenCount ?? 0)
             : ModelUsage.None;
 }
