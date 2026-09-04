@@ -1,6 +1,8 @@
+using System.Diagnostics;
 using System.Text.Json;
 using CreServicing.Core.Configuration;
 using CreServicing.Core.Data;
+using CreServicing.Core.Diagnostics;
 using CreServicing.Core.Runs;
 // For ToModelUsage. The SDK-to-ModelUsage mapping deliberately lives next to the
 // extractors rather than in Cost/, so that folder keeps no SDK reference and its
@@ -150,6 +152,8 @@ public sealed class ServicingRunner(IChatClient chatClient, IOptions<AzureOpenAI
         var task = $"Review the quarterly reporting package for loan {loanId}, report whether it "
                    + "is in covenant compliance, and file a servicing exception for each finding.";
 
+        using var activity = ServicingTelemetry.Turn("start", loanId, run.RunId);
+
         try
         {
             var session = await binding.Agent.CreateSessionAsync(cancellationToken);
@@ -161,6 +165,7 @@ public sealed class ServicingRunner(IChatClient chatClient, IOptions<AzureOpenAI
             Fail(run, ex, ledger, approvals);
         }
 
+        Describe(activity, run);
         return run;
     }
 
@@ -211,6 +216,15 @@ public sealed class ServicingRunner(IChatClient chatClient, IOptions<AzureOpenAI
 
         var binding = BuildAgent(ledger, approvals);
 
+        // Started after the validation above rather than before it, so the span
+        // covers the turn and not the argument checking. A rejected submission
+        // never reaches the model and is already visible as a 400 on the HTTP
+        // span; giving it an agent-turn span too would put a turn in the trace
+        // that never happened.
+        using var activity = ServicingTelemetry.Turn("resume", run.LoanId, run.RunId);
+        activity?.SetTag("cre.round", run.Round);
+        activity?.SetTag("cre.approvals_answered", answers.Count);
+
         try
         {
             var session = await binding.Agent.DeserializeSessionAsync(
@@ -255,7 +269,38 @@ public sealed class ServicingRunner(IChatClient chatClient, IOptions<AzureOpenAI
             Fail(run, ex, ledger, approvals);
         }
 
+        Describe(activity, run);
         return run;
+    }
+
+    /// <summary>
+    /// Puts the run's outcome on the turn's span.
+    ///
+    /// Called after <see cref="Fail"/> as well as after a clean turn, which is the
+    /// point: a run that threw still spent money and may still have filed
+    /// something, and a span that only describes successful turns hides exactly
+    /// the runs worth looking at. The token counts are cumulative for the run
+    /// rather than for this turn, so summing them across a run's spans would
+    /// double-count — read the last span, not the total.
+    /// </summary>
+    private static void Describe(Activity? activity, ServicingRun run)
+    {
+        if (activity is null)
+        {
+            return;
+        }
+
+        activity.SetTag("cre.status", run.Status.ToString());
+        activity.SetTag("cre.model_calls", run.ModelCalls);
+        activity.SetTag("cre.filed_count", run.Filed.Count);
+        activity.SetTag("cre.awaiting_human_count", run.AwaitingHuman.Count());
+        activity.SetTag("gen_ai.request.model", run.Deployment);
+        activity.SetUsage(run.Usage);
+
+        if (run.Status is ServicingRunStatus.Failed)
+        {
+            activity.SetStatus(ActivityStatusCode.Error, run.Error);
+        }
     }
 
     /// <summary>

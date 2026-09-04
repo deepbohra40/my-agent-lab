@@ -1,0 +1,69 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.5.3">
+
+  <!-- Item 4, step 2: somewhere for the spans to go.
+       ═══════════════════════════════════════════════════════════════════════
+
+       ── What this project is ──────────────────────────────────────────────
+       A local development launcher, and nothing else. It starts
+       CreServicing.Api, opens the Aspire dashboard, and injects the OTLP
+       endpoint that Api/Telemetry.cs is already watching for. It is not in the
+       request path, it is not a deployment artifact, and nothing references it.
+       Deleting it would cost the dashboard and not one line of behaviour.
+
+       ── Why an AppHost rather than the standalone dashboard container ──────
+       The usual advice is to run mcr.microsoft.com/dotnet/aspire-dashboard in
+       Docker and point OTEL_EXPORTER_OTLP_ENDPOINT at it, which is the lighter
+       option and needs no project at all. There is no Docker on this machine.
+
+       The AppHost route needs none: Aspire 13 ships as an MSBuild SDK resolved
+       from NuGet — note the Sdk attribute above rather than a PackageReference
+       — so the workload install that made this expensive under Aspire 8 is
+       gone. Same dashboard, no daemon.
+
+       ── Why 13.5.3 and not section 5's 13.2.3 ─────────────────────────────
+       This started pinned to 13.2.3 to match the instructor's
+       MinimalAgent/AppHost — one Aspire version in the repo, one thing to keep
+       straight. That pin restored a transitive MessagePack 2.5.192, which
+       carries eleven advisories including two rated high (GHSA-hv8m-jj95-wg3x,
+       GHSA-vh6j-jc39-fggf): 22 NU1902/NU1903 warnings on every build.
+
+       13.5.3 resolves a MessagePack without them, and the count goes to zero.
+       Matching the scratchpad was never worth two known-high advisories, and
+       raising the SDK is the fix rather than the workaround — pinning
+       MessagePack directly would have meant forcing a major version on
+       Aspire's own IPC serializer to paper over a dependency it controls.
+
+       Section 5's AppHost stays on 13.2.3. It is a follow-along scratchpad that
+       nothing builds; this is the project that gets shown.
+
+       ── Why CI does not build this ────────────────────────────────────────
+       CI builds through the two test projects, and no test references this one,
+       so it is excluded by construction rather than by an exclusion rule. That
+       is the correct outcome: an AppHost with no tests would add an Aspire SDK
+       restore to every CI run in order to compile a launcher. See the note in
+       .github/workflows/ci.yml, which anticipated this project existing. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CreServicing.AppHost</RootNamespace>
+
+    <!-- ASPIRE010: 13.5 wants AspireUseCliBundle=true so the `aspire` CLI's
+         run and publish features work. This project is launched with
+         `dotnet run` and exists to open a dashboard, so the bundle would be a
+         download in exchange for features nothing here calls.
+
+         Suppressed rather than enabled, and named explicitly rather than
+         blanket-silenced. Worth being clear about the difference from the
+         advisories above: that was a security warning and it got fixed by
+         moving the dependency, not muted. This one is a capability notice. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CreServicing.Api\CreServicing.Api.csproj" />
+  </ItemGroup>
+
+</Project>

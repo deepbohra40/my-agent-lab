@@ -29,13 +29,25 @@ jobs:
       # Both are restored and built through their own project files rather than
       # through the solution, on purpose. The ProjectReference chain pulls in
       # CreServicing.Core, CreServicing.Api and CreServicing.Cli, so everything
-      # that matters is compiled and analysed. What is deliberately left out is
-      # the section 5 MinimalAgent/AppHost project: it needs the Aspire workload,
-      # which would add an install step and several minutes to every run in order
-      # to compile a throwaway follow-along scratchpad that has no tests.
+      # that matters is compiled and analysed.
       #
-      # If CreServicing.Core ever gains an Aspire host of its own — item 4 on the
-      # roadmap — this narrows the wrong thing and should be revisited.
+      # Two Aspire hosts are deliberately left out, for two different reasons:
+      #
+      #   - section 5's MinimalAgent/AppHost is a throwaway follow-along
+      #     scratchpad with no tests, still on Aspire 13.2.3.
+      #
+      #   - src/CreServicing.AppHost — item 4 step 2, added 2026-09-04 — is the
+      #     local dashboard launcher. This is the project the note here used to
+      #     anticipate. It stays out, and the reasoning has changed: Aspire 13
+      #     needs no workload, so the old "it would add an install step" argument
+      #     is gone. What remains is that it has no tests and is not in the
+      #     request path, so building it here would spend an Aspire SDK restore
+      #     per run to compile a thing that launches a dashboard. Nothing
+      #     references it, so it is excluded by construction rather than by rule.
+      #
+      # If the AppHost ever gains behaviour worth asserting — a health check
+      # composition, a resource graph — it needs a test project, and that test
+      # project belongs in the list below rather than a build step of its own.
       - name: Restore
         run: |
           dotnet restore tests/CreServicing.Core.Tests/CreServicing.Core.Tests.csproj

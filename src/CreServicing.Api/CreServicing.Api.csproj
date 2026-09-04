@@ -30,6 +30,32 @@
     <PackageReference Include="Microsoft.OpenApi" Version="2.12.2" />
   </ItemGroup>
 
+  <!-- Item 4. The OpenTelemetry SDK lives here and only here: CreServicing.Core
+       emits activities through the BCL's ActivitySource and has no idea whether
+       anything is listening, which is what keeps the covenant tests runnable in
+       the free CI job with no telemetry packages in sight.
+
+       Same versions as the instructor's section 5 ServiceDefaults, which is the
+       one place in this repo they are already known to restore together.
+
+       Two packages that ServiceDefaults has and this does NOT, both deliberate:
+
+         - Microsoft.Extensions.Http.Resilience. Adding it would put a second
+           retry budget on top of the one System.ClientModel already runs for the
+           Azure client, and two uncoordinated policies multiply. The full
+           argument is in ServiceRegistration next to the ClientRetryPolicy; this
+           is the same decision, restated so nobody "completes" the Aspire
+           template by adding it back.
+
+         - Microsoft.Extensions.ServiceDiscovery. There is one service. -->
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.2" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.15.1" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.1" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\CreServicing.Core\CreServicing.Core.csproj" />
   </ItemGroup>

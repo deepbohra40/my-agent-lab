@@ -3,6 +3,7 @@ using CreServicing.Core.Configuration;
 using Microsoft.Extensions.Options;
 using CreServicing.Core.Cost;
 using CreServicing.Core.Data;
+using CreServicing.Core.Diagnostics;
 using CreServicing.Core.Domain;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -78,11 +79,34 @@ public sealed class InsuranceCertificateExtractor(IChatClient chatClient, IOptio
     public async Task<ExtractionResult<InsuranceCertificateExtract>> ExtractAsync(
         SourceDocument document, CancellationToken cancellationToken = default)
     {
+        using var activity = ServicingTelemetry.Extraction("insurance-certificate", document);
+
         AgentResponse<InsuranceCertificateExtract> response =
             await _extractor.RunAsync<InsuranceCertificateExtract>(
                 BuildInput(document), cancellationToken: cancellationToken);
 
-        return new ExtractionResult<InsuranceCertificateExtract>(response.Result, response.ToModelUsage());
+        // Tokens before Result. See the note in RentRollExtractor — reading
+        // Result parses and can throw, and the tokens were billed regardless.
+        var usage = response.ToModelUsage();
+        activity.SetUsage(usage);
+
+        InsuranceCertificateExtract? value;
+        try
+        {
+            value = response.Result;
+        }
+        catch (JsonException ex)
+        {
+            activity.Unparseable(ex);
+            throw;
+        }
+
+        if (value is null)
+        {
+            activity.NoResult();
+        }
+
+        return new ExtractionResult<InsuranceCertificateExtract>(value, usage);
     }
 
     private static string BuildInput(SourceDocument document)

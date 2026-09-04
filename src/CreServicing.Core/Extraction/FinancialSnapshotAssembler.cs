@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using CreServicing.Core.Cost;
 using CreServicing.Core.Data;
+using CreServicing.Core.Diagnostics;
 using CreServicing.Core.Domain;
 
 namespace CreServicing.Core.Extraction;
@@ -54,6 +56,31 @@ public sealed class FinancialSnapshotAssembler(
     public async Task<AssembledSnapshot> AssembleAsync(
         string loanId, DateOnly asOf, CancellationToken cancellationToken = default)
     {
+        using var activity = ServicingTelemetry.Assembly(loanId);
+
+        try
+        {
+            return await AssembleCoreAsync(loanId, asOf, activity, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            // The 422 path — a document missing from the package, an extraction
+            // that returned nothing, or a required field that came back null.
+            // Caught only to put the reason on the span before letting it go: the
+            // endpoint still turns this into the same 422 with the same message.
+            //
+            // Worth the extra frame because this is the failure that costs money.
+            // The extractions that already ran are billed whether or not the
+            // assembly completed, and a trace that showed a bare exception would
+            // hide which of the four fell over.
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            throw;
+        }
+    }
+
+    private async Task<AssembledSnapshot> AssembleCoreAsync(
+        string loanId, DateOnly asOf, Activity? activity, CancellationToken cancellationToken)
+    {
         var package = DocumentStore.GetPackage(loanId);
 
         var rentRollDoc = FindDocument(package, loanId, "rent-roll");
@@ -74,6 +101,12 @@ public sealed class FinancialSnapshotAssembler(
             new DocumentCost(operatingStatementDoc.FileName, operatingStatementResult.Usage),
             new DocumentCost(insuranceDoc.FileName, insuranceResult.Usage)
         ]);
+
+        // Set before the null checks below, for the same reason the cost is
+        // accounted before them: a package that fails to assemble still spent
+        // this, and the span is where that is read.
+        activity?.SetTag("cre.document_count", cost.DocumentCount);
+        activity.SetUsage(cost.TotalUsage);
 
         var rentRoll = rentRollResult.Value
             ?? throw new InvalidOperationException($"Rent roll extraction returned nothing for {loanId}.");

@@ -3,6 +3,7 @@ using CreServicing.Core.Configuration;
 using Microsoft.Extensions.Options;
 using CreServicing.Core.Cost;
 using CreServicing.Core.Data;
+using CreServicing.Core.Diagnostics;
 using CreServicing.Core.Domain;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -88,11 +89,34 @@ public sealed class TaxBillExtractor(IChatClient chatClient, IOptions<AzureOpenA
     public async Task<ExtractionResult<TaxBillExtract>> ExtractAsync(
         SourceDocument document, CancellationToken cancellationToken = default)
     {
+        using var activity = ServicingTelemetry.Extraction("tax-bill", document);
+
         AgentResponse<TaxBillExtract> response =
             await _extractor.RunAsync<TaxBillExtract>(
                 BuildInput(document), cancellationToken: cancellationToken);
 
-        return new ExtractionResult<TaxBillExtract>(response.Result, response.ToModelUsage());
+        // Tokens before Result. See the note in RentRollExtractor — reading
+        // Result parses and can throw, and the tokens were billed regardless.
+        var usage = response.ToModelUsage();
+        activity.SetUsage(usage);
+
+        TaxBillExtract? value;
+        try
+        {
+            value = response.Result;
+        }
+        catch (JsonException ex)
+        {
+            activity.Unparseable(ex);
+            throw;
+        }
+
+        if (value is null)
+        {
+            activity.NoResult();
+        }
+
+        return new ExtractionResult<TaxBillExtract>(value, usage);
     }
 
     private static string BuildInput(SourceDocument document)

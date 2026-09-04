@@ -1,8 +1,10 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using CreServicing.Core.Data;
+using CreServicing.Core.Diagnostics;
 using CreServicing.Core.Domain;
 
 namespace CreServicing.Core.Tools;
@@ -71,11 +73,16 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
                      + "and four digits. Example: CRE-2019-0447. Use the exact identifier supplied by "
                      + "the user; do not guess one.")] string loanId)
     {
+        using var activity = ServicingTelemetry.Tool(nameof(GetLoanTerms), loanId);
+
         if (!MockServicingSystem.TryGetLoanTerms(loanId, out var terms) || terms is null)
         {
+            activity.Rejected("unknown loan");
             return $"No loan '{loanId}' in the servicing system. Known loans: "
                    + string.Join(", ", MockServicingSystem.LoanIds);
         }
+
+        activity?.SetTag("cre.property_type", terms.PropertyType.ToString());
 
         // Deliberately not the whole record. OriginalPrincipal and InterestRate
         // are not inputs to any covenant test, so they are pure token cost.
@@ -112,6 +119,8 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
         [Description("The loan identifier whose package should be listed, e.g. CRE-2019-0447. This is "
                      + "the same identifier used by GetLoanTerms.")] string loanId)
     {
+        using var activity = ServicingTelemetry.Tool(nameof(ListPackageDocuments), loanId);
+
         IReadOnlyList<SourceDocument> package;
         try
         {
@@ -119,8 +128,11 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
         }
         catch (DirectoryNotFoundException ex)
         {
+            activity.Rejected("no package on file");
             return ex.Message;
         }
+
+        activity?.SetTag("cre.document_count", package.Count);
 
         if (package.Count == 0)
         {
@@ -162,6 +174,8 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
         [Description("Path to the document relative to the fixtures root, as returned by "
                      + "ListPackageDocuments. Example: CRE-2019-0447/rent-roll-2026-Q2.txt")] string relativePath)
     {
+        using var activity = ServicingTelemetry.Tool(nameof(GetDocumentText));
+
         SourceDocument document;
         try
         {
@@ -169,8 +183,14 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
         }
         catch (FileNotFoundException ex)
         {
+            activity.Rejected("no such document");
             return $"{ex.Message} Call ListPackageDocuments to see valid paths.";
         }
+
+        // The path and the size, never the text. Same line the /documents endpoint
+        // holds, for the same reason — see the note on ServicingTelemetry.
+        activity?.SetTag("cre.document", document.RelativePath.Replace('\\', '/'));
+        activity?.SetTag("cre.approximate_tokens", document.ApproximateTokens);
 
         var text = document.Text;
 
@@ -185,6 +205,12 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
             text = text
                 .Replace(DocumentOpen, "[REDACTED MARKER]", StringComparison.OrdinalIgnoreCase)
                 .Replace(DocumentClose, "[REDACTED MARKER]", StringComparison.OrdinalIgnoreCase);
+
+            // Worth a span attribute rather than only a line in the returned text.
+            // A borrower whose "certified" rent roll carries our own fence markers
+            // is a fraud signal, and a fraud signal that only exists inside a model
+            // prompt is one nobody can alert on.
+            activity?.SetTag("cre.fence_markers_redacted", true);
         }
 
         var builder = new StringBuilder();
@@ -260,24 +286,34 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
         [Description("The as-of date the reporting period closed, as ISO yyyy-MM-dd. Use the rent "
                      + "roll's as-of date.")] string asOfDate)
     {
+        // The most important span in the trace. Everything above it is the model
+        // exercising judgement about which documents to read; this is where it
+        // hands the numbers over and C# decides. Reading a run's spans top to
+        // bottom, this is the line the verdict crosses.
+        using var activity = ServicingTelemetry.Tool(nameof(EvaluateCovenants), loanId);
+
         if (!MockServicingSystem.TryGetLoanTerms(loanId, out var terms) || terms is null)
         {
+            activity.Rejected("unknown loan");
             return $"No loan '{loanId}' in the servicing system. Known loans: "
                    + string.Join(", ", MockServicingSystem.LoanIds);
         }
 
         if (!DateOnly.TryParseExact(insuranceExpirationDate, "yyyy-MM-dd", Us, DateTimeStyles.None, out var expiration))
         {
+            activity.Rejected("insuranceExpirationDate not ISO yyyy-MM-dd");
             return $"insuranceExpirationDate '{insuranceExpirationDate}' is not ISO yyyy-MM-dd.";
         }
 
         if (!DateOnly.TryParseExact(asOfDate, "yyyy-MM-dd", Us, DateTimeStyles.None, out var asOf))
         {
+            activity.Rejected("asOfDate not ISO yyyy-MM-dd");
             return $"asOfDate '{asOfDate}' is not ISO yyyy-MM-dd.";
         }
 
         if (occupiedSpace is not { } occupied || totalSpace is not { } total)
         {
+            activity.Rejected("occupancy operands incomplete");
             return "Occupancy cannot be tested without both occupiedSpace and totalSpace, in the same "
                    + "unit of measure. Re-read the rent roll; if it genuinely states only one of them, "
                    + "report that the occupancy covenant could not be tested and why.";
@@ -285,11 +321,16 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
 
         if (total <= 0m)
         {
+            activity.Rejected("totalSpace not positive");
             return $"totalSpace {total} must be greater than zero.";
         }
 
         if (occupied < 0m || occupied > total)
         {
+            // Almost always the unit-of-measure mix-up the parameter descriptions
+            // warn about — square feet against a unit count. Worth being able to
+            // count in a dashboard, because the fix is a prompt change.
+            activity.Rejected("occupiedSpace out of range for totalSpace");
             return $"occupiedSpace {occupied} must be between zero and totalSpace {total}. "
                    + "Check that both figures are in the same unit of measure — square feet with "
                    + "square feet, units with units.";
@@ -322,6 +363,13 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
         // period close and only 41 days out on the day of review.
         var findings = CovenantEngine.Evaluate(
             terms, snapshot, asOf, DateOnly.FromDateTime(DateTime.Today));
+
+        // The codes, not the summaries. A code is a low-cardinality enum-shaped
+        // string that a dashboard can group and alert on; the summary is prose
+        // carrying the borrower's figures, which is neither.
+        activity?.SetTag("cre.finding_count", findings.Count);
+        activity?.SetTag("cre.finding_codes", string.Join(",", findings.Select(f => f.Code)));
+        activity?.SetTag("cre.ltv_tested", appraisedValue is not null);
 
         // The computed intermediates are echoed back deliberately. The model is
         // about to write a report citing these numbers, and it should cite the
@@ -388,13 +436,26 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
         [Description("The finding's evidence string, copied verbatim from EvaluateCovenants. This is "
                      + "the audit trail — the figures the determination rests on.")] string evidence)
     {
+        // This span only ever exists for a call a human already approved — the
+        // framework suspends the run before the function body is reached, so an
+        // unapproved filing produces no span here at all. That makes the span
+        // count a usable proxy for "writes that actually happened", which is the
+        // number a compliance reviewer asks for first.
+        using var activity = ServicingTelemetry.Tool(nameof(CreateServicingException), loanId);
+        activity?.SetTag("cre.finding_code", code);
+
         if (!MockServicingSystem.TryGetLoanTerms(loanId, out var terms) || terms is null)
         {
+            activity.Rejected("unknown loan");
             return $"REJECTED: no loan '{loanId}' in the servicing system. Nothing was filed.";
         }
 
         if (!CovenantEngine.KnownCodes.Contains(code))
         {
+            // The model inventing a finding code is the failure this whole
+            // project is arranged against, and it is worth an error span rather
+            // than a string the model reads and quietly works around.
+            activity.Rejected("unknown finding code");
             return $"REJECTED: '{code}' is not a code any covenant test produces. Valid codes: "
                    + string.Join(", ", CovenantEngine.KnownCodes.OrderBy(c => c))
                    + ". Nothing was filed.";
@@ -402,12 +463,14 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
 
         if (!Enum.TryParse<ExceptionSeverity>(severity, ignoreCase: true, out var parsedSeverity))
         {
+            activity.Rejected("invalid severity");
             return $"REJECTED: '{severity}' is not a valid severity. Use Informational, Watch, or "
                    + "Breach. Nothing was filed.";
         }
 
         if (string.IsNullOrWhiteSpace(summary) || string.IsNullOrWhiteSpace(evidence))
         {
+            activity.Rejected("summary or evidence missing");
             return "REJECTED: summary and evidence are both required. An exception without evidence "
                    + "is not an audit record. Nothing was filed.";
         }
@@ -421,6 +484,19 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
             new ServicingException(loanId, code, parsedSeverity, summary, evidence),
             approval,
             filedAt: DateTimeOffset.UtcNow);
+
+        activity?.SetTag("cre.outcome", "filed");
+        activity?.SetTag("cre.severity", parsedSeverity.ToString());
+        activity?.SetTag("cre.reference_number", entry.ReferenceNumber);
+
+        // UNATTRIBUTED when a write reached the ledger with no approval to spend
+        // on it. The ledger already records that; the span records it too, because
+        // it is the one thing here that would be a genuine incident.
+        activity?.SetTag("cre.approved_by", entry.ApprovedBy);
+        if (!entry.IsAttributed)
+        {
+            activity?.SetStatus(ActivityStatusCode.Error, "filed without a matching approval");
+        }
 
         return JsonSerializer.Serialize(new
         {

@@ -2,6 +2,7 @@ using System.Text.Json;
 using CreServicing.Core.Configuration;
 using CreServicing.Core.Cost;
 using CreServicing.Core.Data;
+using CreServicing.Core.Diagnostics;
 using CreServicing.Core.Domain;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -80,11 +81,34 @@ public sealed class OperatingStatementExtractor(IChatClient chatClient, IOptions
     public async Task<ExtractionResult<OperatingStatementExtract>> ExtractAsync(
         SourceDocument document, CancellationToken cancellationToken = default)
     {
+        using var activity = ServicingTelemetry.Extraction("operating-statement", document);
+
         AgentResponse<OperatingStatementExtract> response =
             await _extractor.RunAsync<OperatingStatementExtract>(
                 BuildInput(document), cancellationToken: cancellationToken);
 
-        return new ExtractionResult<OperatingStatementExtract>(response.Result, response.ToModelUsage());
+        // Tokens before Result. See the note in RentRollExtractor — reading
+        // Result parses and can throw, and the tokens were billed regardless.
+        var usage = response.ToModelUsage();
+        activity.SetUsage(usage);
+
+        OperatingStatementExtract? value;
+        try
+        {
+            value = response.Result;
+        }
+        catch (JsonException ex)
+        {
+            activity.Unparseable(ex);
+            throw;
+        }
+
+        if (value is null)
+        {
+            activity.NoResult();
+        }
+
+        return new ExtractionResult<OperatingStatementExtract>(value, usage);
     }
 
     private static string BuildInput(SourceDocument document)

@@ -3,6 +3,7 @@ using Azure.AI.OpenAI;
 using Azure.Core;
 using Azure.Identity;
 using CreServicing.Core.Agents;
+using CreServicing.Core.Diagnostics;
 using CreServicing.Core.Extraction;
 using CreServicing.Core.Runs;
 using Microsoft.Extensions.AI;
@@ -127,9 +128,34 @@ public static class ServiceRegistration
         services.AddSingleton<IChatClient>(provider =>
         {
             var options = provider.GetRequiredService<IOptions<AzureOpenAIOptions>>().Value;
-            return provider.GetRequiredService<AzureOpenAIClient>()
+
+            var client = provider.GetRequiredService<AzureOpenAIClient>()
                 .GetChatClient(options.Deployment)
                 .AsIChatClient();
+
+            // ── Why the model calls are wrapped rather than just subscribed to ──
+            //
+            // Turning on the OpenTelemetry SDK in the host is not enough to see
+            // model calls: a bare IChatClient emits nothing. The GenAI spans —
+            // model name, token counts, finish reason, duration — come from this
+            // decorator, and without it the dashboard shows a servicing run whose
+            // agent turns contain no evidence that a model was involved at all.
+            //
+            // Registered here rather than in the API's composition because the CLI
+            // deserves the same spans, and because a decorator that only some
+            // hosts apply is a decorator that reports different numbers depending
+            // on who is asking.
+            //
+            // EnableSensitiveData is deliberately NOT set. It puts prompts and
+            // completions on the spans, which here means whole borrower rent rolls
+            // and operating statements leaving the process for a collector. The
+            // /documents endpoint returns names and sizes but never content and
+            // there is a test pinning that; this is the same boundary, and it is
+            // the one that would be crossed by accident.
+            return client
+                .AsBuilder()
+                .UseOpenTelemetry(sourceName: ServicingTelemetry.ActivitySourceName)
+                .Build(provider);
         });
 
         // The extractors and the runner. Singletons because each builds an

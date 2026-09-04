@@ -3,6 +3,7 @@ using CreServicing.Core.Configuration;
 using Microsoft.Extensions.Options;
 using CreServicing.Core.Cost;
 using CreServicing.Core.Data;
+using CreServicing.Core.Diagnostics;
 using CreServicing.Core.Domain;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
@@ -120,11 +121,43 @@ public sealed class RentRollExtractor(IChatClient chatClient, IOptions<AzureOpen
     public async Task<ExtractionResult<RentRollExtract>> ExtractAsync(
         SourceDocument document, CancellationToken cancellationToken = default)
     {
+        using var activity = ServicingTelemetry.Extraction("rent-roll", document);
+
         AgentResponse<RentRollExtract> response =
             await _extractor.RunAsync<RentRollExtract>(
                 BuildInput(document), cancellationToken: cancellationToken);
 
-        return new ExtractionResult<RentRollExtract>(response.Result, response.ToModelUsage());
+        // ── Tokens before Result, and the order is load-bearing ──────────────
+        //
+        // AgentResponse<T>.Result parses lazily: reading it deserializes the
+        // model's text into the schema and THROWS if it does not fit. The tokens
+        // were billed either way, so setting usage after that read would record
+        // cost only on success — under-reporting exactly the runs that wasted
+        // money, which is the opposite of what a cost span is for. Same ordering
+        // argument as PackageCost accounting before the assembler's null checks.
+        var usage = response.ToModelUsage();
+        activity.SetUsage(usage);
+
+        RentRollExtract? value;
+        try
+        {
+            value = response.Result;
+        }
+        catch (JsonException ex)
+        {
+            // Rethrown unchanged — this only puts the reason on the span. A span
+            // that ended "successful" because the exception unwound past it would
+            // be worse than no span at all.
+            activity.Unparseable(ex);
+            throw;
+        }
+
+        if (value is null)
+        {
+            activity.NoResult();
+        }
+
+        return new ExtractionResult<RentRollExtract>(value, usage);
     }
 
     private static string BuildInput(SourceDocument document)

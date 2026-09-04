@@ -34,6 +34,12 @@ CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("en-US");
 builder.Services.AddCreServicing(builder.Configuration, validateOnStart: false);
 builder.Services.AddSingleton<ModelAvailability>();
 
+// Item 4. Registered unconditionally and exported only when a collector is
+// configured — see Telemetry.cs for why that asymmetry is the point rather than a
+// half-measure. A servicing run is two HTTP requests minutes apart, and this is
+// what makes it legible as one operation instead of two unrelated POSTs.
+builder.AddCreServicingTelemetry();
+
 builder.Services.AddProblemDetails();
 builder.Services.AddOpenApi();
 
