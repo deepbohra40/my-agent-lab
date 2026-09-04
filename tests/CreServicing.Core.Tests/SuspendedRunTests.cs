@@ -131,6 +131,60 @@ public class SuspendedRunTests
     }
 
     /// <summary>
+    /// Two approval rounds in one run — the case a real package always is.
+    ///
+    /// ── Why this test exists ─────────────────────────────────────────────────
+    ///
+    /// Every other resume test above scripts exactly ONE approval and then
+    /// completes, which is not what a servicing review looks like: CRE-2019-0447
+    /// produces five findings, and the model asks for them one at a time. That
+    /// gap was found the expensive way, by a live run against gpt-5-mini failing
+    /// on its second resume with
+    ///
+    ///   "ToolApprovalRequestContent found with FunctionCall.CallId(s) '…' that
+    ///    have no matching ToolApprovalResponseContent"
+    ///
+    /// naming the call id of the approval answered TWO turns earlier — the one
+    /// that had already filed successfully.
+    /// </summary>
+    [Fact]
+    public async Task A_run_survives_a_second_approval_round()
+    {
+        var client = new ScriptedChatClient(
+            ScriptedChatClient.ToolCall("c1", "CreateServicingException",
+                ScriptedChatClient.Filing(code: "DSCR-MIN")),
+            ScriptedChatClient.ToolCall("c2", "CreateServicingException",
+                ScriptedChatClient.Filing(code: "OCC-MIN", summary: "Occupancy below the covenant floor.",
+                    evidence: "118,600 / 142,000 = 0.8352 against an 85% minimum.")),
+            ScriptedChatClient.Text("Filed two exceptions."));
+
+        var runner = Runner(client);
+
+        var run = await runner.StartAsync(KnownLoan, Approver);
+        var first = Assert.Single(run.AwaitingHuman);
+
+        run = await runner.ResumeAsync(
+            run, [new ApprovalDecisionInput(first.RequestId, Approved: true, TimeSpan.FromSeconds(5))]);
+
+        // Round one landed and the agent immediately asks for the second.
+        Assert.Equal(ServicingRunStatus.AwaitingApproval, run.Status);
+        Assert.Single(run.Filed);
+
+        var second = Assert.Single(run.AwaitingHuman);
+
+        run = await runner.ResumeAsync(
+            run, [new ApprovalDecisionInput(second.RequestId, Approved: true, TimeSpan.FromSeconds(4))]);
+
+        // The assertion that fails today. ResumeAsync catches and records rather
+        // than throwing, so the symptom is a Failed run carrying the framework's
+        // message — not an exception out of this call.
+        Assert.Null(run.Error);
+        Assert.Equal(ServicingRunStatus.Completed, run.Status);
+        Assert.Equal(2, run.Filed.Count);
+        Assert.Equal(["DSCR-MIN", "OCC-MIN"], run.Filed.Select(f => f.Exception.Code));
+    }
+
+    /// <summary>
     /// The one that proves stage C rather than merely exercising it.
     /// </summary>
     [Fact]

@@ -14,12 +14,41 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Same pins as the course repo, so the instructor's snippets paste in
-         without API drift. -->
+    <!-- Mostly the course repo's pins, so the instructor's snippets paste in
+         without API drift. Microsoft.Extensions.AI is the deliberate exception —
+         see below.
+
+         ── Why Extensions.AI is 10.9.0 and not the course's 10.5.0 ───────────
+         On 10.5.0 the human-approval loop survives exactly ONE round. A second
+         resume throws from FunctionInvokingChatClient:
+
+           "ToolApprovalRequestContent found with FunctionCall.CallId(s) '…'
+            that have no matching ToolApprovalResponseContent"
+
+         naming a request that was answered and filed two turns earlier. The
+         cause is a round-trip incompatibility, not our usage:
+         ExtractAndRemoveApprovalRequestsAndResponses treats an approval
+         request/response pair as transient and strips it once resolved, but
+         SerializeSessionAsync persists the pair anyway. Deserializing re-injects
+         a stale pair the matcher then rejects. An in-memory session never hits
+         it, which is why the console loop was fine and only the HTTP path — the
+         one that must serialize — broke.
+
+         That made every multi-finding package fail: CRE-2019-0447 produces five
+         findings and the model asks for them one at a time. It was found by a
+         live run, not by the suite, because every resume test scripted a single
+         approval. SuspendedRunTests.A_run_survives_a_second_approval_round is
+         the regression test; it fails on 10.5.0 and passes here, with no
+         source changes needed.
+
+         Microsoft.Agents.AI stays at 1.3.0 deliberately — 1.20.0 exists, but
+         this bump is the minimal verified fix and a 17-minor jump would change
+         agent behaviour that only a paid live run can check. Worth revisiting
+         as its own task. -->
     <PackageReference Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.3.0" />
-    <PackageReference Include="Microsoft.Extensions.AI" Version="10.5.0" />
+    <PackageReference Include="Microsoft.Extensions.AI" Version="10.9.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.11" />
   </ItemGroup>
