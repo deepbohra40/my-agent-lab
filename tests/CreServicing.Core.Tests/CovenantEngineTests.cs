@@ -72,6 +72,132 @@ public class CovenantEngineTests
         findings.HasNo("DSCR-MIN");
     }
 
+    // ── NOI reconciliation: the borrower's own number against the arithmetic ─
+    //
+    // Not a covenant test, and these assertions are written to keep it that way.
+    // The tolerance is 1% of the computed figure; the direction of the gap sets
+    // the severity. The test that matters most is the last one in this block —
+    // the others pin the band, that one pins the independence.
+
+    [Fact]
+    public void A_reported_noi_that_ties_to_the_arithmetic_produces_nothing()
+    {
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with { ReportedNetOperatingIncome = 2_400_000m });
+
+        findings.HasNo("NOI-RECONCILE");
+    }
+
+    [Fact]
+    public void A_statement_with_no_reported_noi_line_produces_nothing()
+    {
+        // Absence is not agreement, but it is also not a finding: there is
+        // nothing to disagree with. Distinct from the LTV case, where the
+        // covenant itself could not be tested and silence would mislead — DSCR
+        // is still fully tested here, on the figure the line items produce.
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with { ReportedNetOperatingIncome = null });
+
+        findings.HasNo("NOI-RECONCILE");
+    }
+
+    [Fact]
+    public void A_gap_exactly_at_the_tolerance_produces_nothing()
+    {
+        // 1% of 2,400,000 is 24,000, and the comparison is strict. Rounding
+        // across a dozen cash-basis expense lines lives in here.
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with { ReportedNetOperatingIncome = 2_424_000m });
+
+        findings.HasNo("NOI-RECONCILE");
+    }
+
+    [Fact]
+    public void A_gap_one_dollar_past_the_tolerance_is_reported()
+    {
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with { ReportedNetOperatingIncome = 2_424_001m });
+
+        Assert.Equal(ExceptionSeverity.Watch, findings.Single("NOI-RECONCILE").Severity);
+    }
+
+    [Fact]
+    public void An_overstated_noi_is_a_watch_and_the_evidence_carries_both_figures()
+    {
+        // The Lakeview shape: the borrower's number is the higher one, which is
+        // the direction that flatters every ratio built on it.
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with { ReportedNetOperatingIncome = 2_554_000m });
+
+        var finding = findings.Single("NOI-RECONCILE");
+        Assert.Equal(ExceptionSeverity.Watch, finding.Severity);
+        Assert.Contains("exceeds", finding.Summary);
+
+        // A reviewer must be able to re-derive the call without rerunning
+        // anything, which means both figures and the gap, not just the verdict.
+        Assert.Contains("$2,554,000", finding.Evidence);
+        Assert.Contains("$2,400,000", finding.Evidence);
+        Assert.Contains("$154,000", finding.Evidence);
+    }
+
+    [Fact]
+    public void An_understated_noi_is_recorded_but_not_escalated()
+    {
+        // Against the borrower's own interest, so it reads as a bookkeeping error
+        // rather than a position being taken. Still recorded — an unexplained gap
+        // is a gap — but it does not carry the same weight as one that improves
+        // the ratios.
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with { ReportedNetOperatingIncome = 2_246_000m });
+
+        var finding = findings.Single("NOI-RECONCILE");
+        Assert.Equal(ExceptionSeverity.Informational, finding.Severity);
+        Assert.Contains("falls short", finding.Summary);
+    }
+
+    [Fact]
+    public void A_zero_computed_noi_admits_no_tolerance_at_all()
+    {
+        // 1% of nothing is nothing, so the percentage rule has no meaning here.
+        // A property covering none of its operating costs is not the place to
+        // start extending the borrower the benefit of the doubt.
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with
+            {
+                NetOperatingIncome = 0m,
+                ReportedNetOperatingIncome = 1m
+            });
+
+        Assert.Equal(ExceptionSeverity.Watch, findings.Single("NOI-RECONCILE").Severity);
+    }
+
+    [Fact]
+    public void The_dscr_test_ignores_the_borrowers_noi_however_large_the_gap()
+    {
+        // The whole point of the reconciliation, stated as an assertion: raising
+        // the finding must not rebase anything onto the borrower's figure. Here
+        // the computed NOI breaches DSCR at 1.10 and the borrower's number would
+        // clear it at 1.50. The breach stands, and the evidence quotes the
+        // computed figure.
+        //
+        // If someone ever "fixes" this by preferring the reported NOI when one is
+        // present, this is the test that fails, and it fails loudly.
+        var findings = Given.Evaluate(
+            snapshot: Given.CompliantSnapshot with
+            {
+                NetOperatingIncome = Given.NoiForDscr(1.10m),
+                ReportedNetOperatingIncome = Given.NoiForDscr(1.50m)
+            });
+
+        var dscr = findings.Single("DSCR-MIN");
+        Assert.Equal(ExceptionSeverity.Breach, dscr.Severity);
+        Assert.Contains("$1,760,000", dscr.Evidence);
+        Assert.DoesNotContain("$2,400,000", dscr.Evidence);
+
+        // And the disagreement is on the record rather than resolved away.
+        Assert.Equal(ExceptionSeverity.Watch, findings.Single("NOI-RECONCILE").Severity);
+    }
+
     // ── LTV: a ceiling, and the only test that can be skipped ────────────────
 
     [Fact]

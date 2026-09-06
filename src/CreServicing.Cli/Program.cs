@@ -312,9 +312,9 @@ static void PrintFindings(IReadOnlyList<ServicingException> findings)
 // left out because it would demonstrate the framework rather than the domain is
 // a decision, and a decision is worth more written down than a gap is.
 //
-// Open, in the order worth doing them: the S9 NOI reconciliation, then S11 and
-// S14, then the S9 fan-out. Smaller open items sit under EVAL, OCR and FAIL
-// below. Everything else is finished or deliberately not being built.
+// Open, in the order worth doing them: S11, then S14, then the S9 fan-out.
+// Smaller open items sit under EVAL, OCR and FAIL below. Everything else is
+// finished or deliberately not being built.
 //
 // S5  Extraction. Done — all four extractors exist (Extraction/), graded by
 //     hand against fixtures/golden/expected-extractions.json, and
@@ -369,13 +369,20 @@ static void PrintFindings(IReadOnlyList<ServicingException> findings)
 //     aggregate into one snapshot, then one covenant pass. Cheap since the
 //     extractors became injected instances with no shared static state.
 //
-//     Worth doing, still open, and the highest-value item left in this file:
-//     the reconciliation the operating statement fixture sets up —
-//     borrower-reported NOI is 2,284,000, recomputed is 2,130,000, and the
-//     154,000 add-back is a finding in its own right. Do not let it pass. It
-//     currently passes: CovenantEngine has no reconciliation test and no code
-//     for it in KnownCodes, so a live run flags the add-back in prose and files
-//     nothing. Prose is not an exception report.
+//     Done — the reconciliation the operating statement fixture sets up.
+//     Borrower-reported NOI is 2,284,000, recomputed from the statement's own
+//     line items it is 2,130,000, and the 154,000 add-back is now a finding in
+//     its own right: NOI-RECONCILE, raised by CovenantEngine against a 1%
+//     materiality tolerance that sits beside the watch band. Direction sets
+//     severity — overstated is a Watch because it flatters every ratio built on
+//     it, understated is Informational.
+//
+//     The reconciliation changes no covenant outcome, deliberately. DSCR is
+//     tested on the computed figure whether the finding fires or not, and
+//     CovenantEngineTests pins exactly that: computed NOI breaching at 1.10
+//     against a reported figure that would clear at 1.50, with the breach
+//     standing. Rebasing a ratio onto the borrower's number is the failure this
+//     work exists to prevent, so it is asserted rather than assumed.
 //
 //     Skipped: handoff to an escalation agent, and group chat. The routing
 //     decision is a severity threshold, which is an if statement, and dressing

@@ -20,6 +20,20 @@ public static class CovenantEngine
     /// </summary>
     private const decimal WatchBand = 0.05m;
 
+    /// <summary>
+    /// How far the borrower's reported NOI may sit from the computed figure
+    /// before it stops being rounding and starts being a judgement call. 1% of
+    /// the computed figure.
+    ///
+    /// A tolerance is necessary — these statements are cash-basis and
+    /// borrower-prepared, and a few hundred dollars of rounding across a dozen
+    /// expense lines is noise. A tolerance is also dangerous, because it is
+    /// exactly the knob someone under pressure widens until the finding goes
+    /// away. So it lives here, next to the watch band, in code that is reviewed
+    /// and version-controlled rather than in a prompt that can be paraphrased.
+    /// </summary>
+    private const decimal NoiReconciliationTolerance = 0.01m;
+
     /// <summary>Insurance expiring inside this window is flagged before it lapses.</summary>
     private const int InsuranceExpiryWarningDays = 60;
 
@@ -54,7 +68,8 @@ public static class CovenantEngine
         "OCC-MIN",
         "INS-COVERAGE",
         "INS-EXPIRY",
-        "MATURITY"
+        "MATURITY",
+        "NOI-RECONCILE"
     };
 
     /// <summary>
@@ -108,6 +123,64 @@ public static class CovenantEngine
         }
 
         var findings = new List<ServicingException>();
+
+        // ── NOI reconciliation: does the borrower's own NOI line tie out? ────
+        //
+        // Not a covenant. No loan agreement requires the borrower's arithmetic to
+        // agree with itself, and nothing below changes because of this test — the
+        // DSCR test that follows runs on the computed figure whether this fires
+        // or not. That independence is the point: the ratio is never quietly
+        // rebased onto the borrower's number, and the disagreement is recorded
+        // instead of resolved.
+        //
+        // It earns a place among the covenant findings because of where the gap
+        // comes from. NOI is arithmetic — effective gross income less operating
+        // expenses — so a difference is not a measurement error, it is a decision
+        // someone made about what counts as an operating expense. Those decisions
+        // are worth having; they are not worth having invisibly, inside a number
+        // three covenants are tested against.
+        if (snapshot.ReportedNetOperatingIncome is { } reportedNoi)
+        {
+            var computedNoi = snapshot.NetOperatingIncome;
+            var difference = reportedNoi - computedNoi;
+
+            // Percentage of the computed figure, which is the defensible base:
+            // it is the one derived from the statement's own line items rather
+            // than from the borrower's conclusion. A zero computed NOI has no
+            // meaningful percentage, so any difference against it is material by
+            // definition — a property covering none of its operating costs is
+            // not the place to start extending tolerances.
+            var scale = Math.Abs(computedNoi);
+            var material = scale == 0m
+                ? difference != 0m
+                : Math.Abs(difference) > scale * NoiReconciliationTolerance;
+
+            if (material)
+            {
+                // Direction decides severity, because the two directions are not
+                // the same event. Overstated NOI flatters every ratio built on
+                // it and is the discrepancy that shows up when a borrower is
+                // managing toward a covenant — Watch. Understated NOI is against
+                // the borrower's own interest, which usually means a bookkeeping
+                // error rather than a position being taken — recorded, because
+                // an unexplained gap is still a gap, but not escalated.
+                var overstated = difference > 0m;
+                var magnitude = Math.Abs(difference);
+
+                findings.Add(new ServicingException(
+                    terms.LoanId,
+                    "NOI-RECONCILE",
+                    overstated ? ExceptionSeverity.Watch : ExceptionSeverity.Informational,
+                    overstated
+                        ? $"Borrower-reported NOI of {Usd(reportedNoi)} exceeds the {Usd(computedNoi)} computed "
+                          + $"from the statement's own line items by {Usd(magnitude)}."
+                        : $"Borrower-reported NOI of {Usd(reportedNoi)} falls short of the {Usd(computedNoi)} computed "
+                          + $"from the statement's own line items by {Usd(magnitude)}.",
+                    $"Effective gross income less operating expenses = {Usd(computedNoi)}; borrower reports "
+                    + $"{Usd(reportedNoi)}; difference {Usd(difference)} ({Pct(difference / (scale == 0m ? 1m : scale), 2)} "
+                    + $"of computed). Covenant tests below use {Usd(computedNoi)}."));
+            }
+        }
 
         // ── DSCR: floor test ─────────────────────────────────────────────────
         var dscr = Covenants.DebtServiceCoverageRatio(snapshot.NetOperatingIncome, terms.AnnualDebtService);

@@ -270,6 +270,12 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
                      + "borrower argues are capital or non-recurring — pass the total as printed and "
                      + "report any such argument separately. NOI is recomputed here as effective "
                      + "gross income minus this figure; a borrower-reported NOI is never used.")] decimal operatingExpenses,
+        [Description("The net operating income the borrower states on the operating statement, in whole "
+                     + "dollars, exactly as printed — even when it disagrees with effective gross income "
+                     + "minus operating expenses, and ESPECIALLY then. Do not correct it, do not "
+                     + "recompute it, and do not omit it because it looks wrong: the disagreement is "
+                     + "itself a finding this tool raises. Pass null only if the statement prints no NOI "
+                     + "line at all.")] decimal? reportedNetOperatingIncome,
         [Description("Occupied space as printed on the rent roll: rentable square feet for office, "
                      + "retail, and industrial; unit count for multifamily. Pass the raw figure, not "
                      + "a ratio or percentage. Null if the rent roll does not state it.")] decimal? occupiedSpace,
@@ -347,7 +353,8 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
             AppraisedValue: appraisedValue,
             OccupancyRate: occupancyRate,
             InsuranceCoverage: insuranceCoverage,
-            InsuranceExpiration: expiration);
+            InsuranceExpiration: expiration,
+            ReportedNetOperatingIncome: reportedNetOperatingIncome);
 
         // The review date is NOT a parameter of this tool, for the same reason the
         // covenant thresholds are not: it is not the model's to supply. asOfDate
@@ -381,6 +388,12 @@ public sealed class ServicingTools(ExceptionLedger ledger, ApprovalLedger approv
             computed = new
             {
                 netOperatingIncome = snapshot.NetOperatingIncome,
+                // Echoed back next to the computed figure so a model writing the
+                // report quotes both, rather than quoting the borrower's number
+                // as though the lender had agreed to it.
+                reportedNetOperatingIncome = reportedNetOperatingIncome is null
+                    ? "not stated — nothing to reconcile"
+                    : reportedNetOperatingIncome.Value.ToString("F0", Us),
                 occupancyRate = decimal.Round(occupancyRate, 6),
                 occupancyBasis = terms.PropertyType == PropertyType.Multifamily ? "units" : "rentable square feet",
                 appraisedValue = appraisedValue is null ? "not provided — LTV untested" : appraisedValue.Value.ToString("F0", Us)

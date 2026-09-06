@@ -55,7 +55,15 @@ internal static class Given
         AppraisedValue: 40_000_000m,
         OccupancyRate: 0.95m,
         InsuranceCoverage: 30_000_000m,
-        InsuranceExpiration: AsOf.AddDays(300));
+        InsuranceExpiration: AsOf.AddDays(300),
+        // Null, not 2,400,000, and the reason is the one-perturbation-per-test
+        // rule above. Every DSCR test moves NetOperatingIncome; if this baseline
+        // carried a fixed reported figure, each of those moves would open a gap
+        // against it and quietly add an NOI-RECONCILE finding to a test that is
+        // supposed to be about DSCR alone. Null means "no borrower NOI line to
+        // reconcile", so the reconciliation tests below set both fields
+        // explicitly — which is what a test of a comparison should do anyway.
+        ReportedNetOperatingIncome: null);
 
     /// <summary>NOI that produces exactly the DSCR asked for, given the baseline debt service.</summary>
     public static decimal NoiForDscr(decimal dscr) => dscr * CompliantTerms.AnnualDebtService;

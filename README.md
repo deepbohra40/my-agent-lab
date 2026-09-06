@@ -73,8 +73,19 @@ A second instance of the same principle: the operating statement extractor captu
 `reportedNetOperatingIncome` — whatever the borrower's document *claims* — in a field
 separate from the NOI the engine computes. On the office fixture the borrower reports
 **$2,284,000** by adding back a $154,000 roof repair; recomputed from the raw line
-items it is **$2,130,000**. The covenant test uses the recomputed figure. Capturing
-both is what makes the $154,000 gap visible instead of silently accepted.
+items it is **$2,130,000**. The covenant test uses the recomputed figure, always.
+
+Carrying both figures is what lets the engine do something about the gap rather than
+merely avoid it. Where they diverge by more than 1% of the computed figure,
+`CovenantEngine` raises **`NOI-RECONCILE`** — a Watch when the borrower's number is the
+higher one, since that is the direction that flatters every ratio built on it. NOI is
+arithmetic, so a difference is never a measurement error; it is a decision someone made
+about what counts as an operating expense. Those decisions are worth having. They are
+not worth having invisibly, inside a number three covenants are tested against.
+
+The finding deliberately changes no covenant outcome — DSCR is tested on the computed
+figure whether it fires or not, and there is a test asserting precisely that, with a
+reported NOI that would clear the covenant and a computed one that breaches it.
 
 ### 3. Tools sorted by blast radius, exactly one gated
 
@@ -274,11 +285,18 @@ CRE-2019-0447  Lakeview Corporate Center
   Borrower        Lakeview Holdings LLC
   Covenants       DSCR >= 1.25   LTV <= 75%   Occupancy >= 85%
 
-  RESULT          5 exception(s)
+  RESULT          6 exception(s)
 
     [BREACH] DSCR-MIN
       DSCR of 1.156 is below the 1.25 covenant minimum.
       Evidence: NOI $2,130,000 / annual debt service $1,842,000 = 1.1564
+
+    [WATCH] NOI-RECONCILE
+      Borrower-reported NOI of $2,284,000 exceeds the $2,130,000 computed from
+      the statement's own line items by $154,000.
+      Evidence: Effective gross income less operating expenses = $2,130,000;
+      borrower reports $2,284,000; difference $154,000 (7.23% of computed).
+      Covenant tests below use $2,130,000.
     ...
 ```
 
@@ -398,6 +416,12 @@ capital. Complying drops opex to $2,236,000, lifts NOI to $2,284,000 and moves D
 1.156 to 1.24 — still a breach, but a materially different number on a borrower's file,
 sourced from the borrower's own argument. The tool description says to pass the total as
 printed and report the argument separately. It did both.
+
+It reported the argument *in prose*, though, which is where that run left a gap worth
+naming: a paragraph in a summary is not an exception on a file. The engine now files the
+discrepancy itself as `NOI-RECONCILE`, so the disagreement survives as a coded, evidenced
+finding rather than as narrative the reader has to notice. The model behaving well was
+never the mechanism — it was the thing that revealed the mechanism was missing.
 
 **Two clocks, still separate.** `INS-EXPIRY` reads *"25 days remaining as of 2026-09-05"*
 against a period close of `2026-06-30`. A single-clock implementation calls that policy

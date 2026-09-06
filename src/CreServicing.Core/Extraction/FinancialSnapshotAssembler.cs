@@ -33,6 +33,12 @@ public sealed record AssembledSnapshot(FinancialSnapshot Snapshot, PackageCost C
 ///      covenant test. See <see cref="OperatingStatementExtractor"/> for the
 ///      fixture this guards against.
 ///
+///      Both figures now reach the snapshot, which does not soften that rule —
+///      it enforces it. The borrower's number rides along in
+///      <see cref="Domain.FinancialSnapshot.ReportedNetOperatingIncome"/> purely
+///      so <see cref="Domain.CovenantEngine"/> can raise NOI-RECONCILE where the
+///      two disagree. Nothing is ever tested against it.
+///
 ///   2. AppraisedValue is always null here. No document type in this pipeline is
 ///      an appraisal — real packages routinely arrive without a current one,
 ///      which is exactly the case <see cref="Domain.FinancialSnapshot.AppraisedValue"/>
@@ -131,7 +137,12 @@ public sealed class FinancialSnapshotAssembler(
             AppraisedValue: null,
             OccupancyRate: occupancy,
             InsuranceCoverage: Require(insurance.CoverageAmount, "coverageAmount", insuranceDoc),
-            InsuranceExpiration: insuranceExpiration);
+            InsuranceExpiration: insuranceExpiration,
+            // Passed through unrequired: a statement that prints no NOI line is a
+            // statement with nothing to reconcile, not a failed extraction. This
+            // is the one extracted field the pipeline carries forward *because*
+            // it may disagree with what the pipeline computed.
+            ReportedNetOperatingIncome: operatingStatement.ReportedNetOperatingIncome);
 
         return new AssembledSnapshot(snapshot, cost);
     }

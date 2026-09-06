@@ -93,7 +93,13 @@ public static class MockServicingSystem
             AppraisedValue: 29_000_000m,          // 2019 appraisal, never refreshed
             OccupancyRate: 0.8352m,               // 118,600 of 142,000 rentable SF
             InsuranceCoverage: 22_000_000m,
-            InsuranceExpiration: new DateOnly(2026, 9, 30)),
+            InsuranceExpiration: new DateOnly(2026, 9, 30),
+            // The borrower's own NOI line, keyed as printed and not corrected.
+            // 154,000 above the computed figure: a roof membrane replacement they
+            // treat as capital while leaving it inside the repairs and
+            // maintenance total. An analyst keys what the document says; the
+            // engine decides what to make of it.
+            ReportedNetOperatingIncome: 2_284_000m),
 
         new FinancialSnapshot(
             LoanId: "CRE-2021-0912",
@@ -102,7 +108,11 @@ public static class MockServicingSystem
             AppraisedValue: 27_400_000m,
             OccupancyRate: 0.9667m,               // 232 of 240 units
             InsuranceCoverage: 22_000_000m,
-            InsuranceExpiration: new DateOnly(2027, 4, 1)),
+            InsuranceExpiration: new DateOnly(2027, 4, 1),
+            // Ties exactly: 4,986,000 less 3,000,000. The control case — a
+            // reconciliation test that fires on a clean statement is worse than
+            // no reconciliation test at all.
+            ReportedNetOperatingIncome: 1_986_000m),
 
         new FinancialSnapshot(
             LoanId: "CRE-2018-0233",
@@ -111,7 +121,11 @@ public static class MockServicingSystem
             AppraisedValue: 15_100_000m,
             OccupancyRate: 0.8800m,
             InsuranceCoverage: 15_500_000m,
-            InsuranceExpiration: new DateOnly(2027, 1, 15))
+            InsuranceExpiration: new DateOnly(2027, 1, 15),
+            // Null, and correctly so. This is the loan with no package on file —
+            // the figures above came off a servicer's spreadsheet, not off a
+            // statement, so there is no borrower NOI line to disagree with.
+            ReportedNetOperatingIncome: null)
     }.ToDictionary(snapshot => snapshot.LoanId);
 
     public static IReadOnlyCollection<string> LoanIds => Loans.Keys;
