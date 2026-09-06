@@ -142,6 +142,28 @@ public static class ServicingTelemetry
     }
 
     /// <summary>
+    /// Grounding a run's findings in the loan agreement.
+    ///
+    /// The pair of counts this span carries — resolved against unresolved — is the
+    /// only place a silently degrading index shows up. Citations failing to attach
+    /// breaks nothing: the findings are unchanged, the run completes, the tests
+    /// pass, and the exception report simply stops quoting the agreement. That is
+    /// the shape of failure nobody notices from the outside, so it gets a number
+    /// something can alert on.
+    ///
+    /// Emitted only when an index is actually configured. The free path resolves
+    /// <see cref="Citations.NullClauseIndex"/> and produces no span at all, because
+    /// a run that never looked for a citation has nothing to report about one.
+    /// </summary>
+    public static Activity? Citations(string loanId, int findingCount)
+    {
+        var activity = Source.StartActivity("resolve_citations", ActivityKind.Internal);
+        activity?.SetTag("cre.loan_id", loanId);
+        activity?.SetTag("cre.finding_count", findingCount);
+        return activity;
+    }
+
+    /// <summary>
     /// Records that an extraction came back with no structured result at all.
     ///
     /// Distinct from a rejected tool call: nothing was refused, the model simply

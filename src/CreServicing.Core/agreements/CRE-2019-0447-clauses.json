@@ -1,0 +1,69 @@
+{
+  "_comment": [
+    "Hand-verified index of the covenant clauses in CRE-2019-0447-loan-agreement.txt,",
+    "and the finding code each one governs. Same relationship to that document as",
+    "fixtures/golden/expected-extractions.json has to the borrower packages: the .txt is",
+    "what a person reads, this is the ground truth a machine is graded against.",
+    "",
+    "'code' is the load-bearing field. Retrieval proposes a clause; the resolver attaches",
+    "the citation only when the clause's code equals the finding's code. A retrieval that",
+    "lands on the wrong clause therefore produces NO citation rather than a wrong one.",
+    "Every code here must exist in CovenantEngine.KnownCodes, and a test asserts it.",
+    "",
+    "'text' is quoted verbatim from the agreement and is what appears on the filed",
+    "exception. Keep it to what a servicer would actually paste into a notice - the",
+    "operative sentence, not the whole section."
+  ],
+  "loanId": "CRE-2019-0447",
+  "sourceDocument": "CRE-2019-0447-loan-agreement.txt",
+  "clauses": [
+    {
+      "clauseId": "2.2",
+      "code": "MATURITY",
+      "heading": "Maturity Date",
+      "text": "The entire unpaid principal balance, together with all accrued and unpaid interest and all other sums due under the Loan Documents, shall be due and payable in full on July 1, 2029 (the \"Maturity Date\"). Not later than one hundred eighty (180) days prior to the Maturity Date, Borrower shall notify Lender in writing of its intention to repay the Loan in full, to seek an extension, or to refinance."
+    },
+    {
+      "clauseId": "6.4",
+      "code": "LTV-UNTESTED",
+      "heading": "Appraisals",
+      "text": "Until such time as an updated appraisal is delivered, the Loan-to-Value Ratio shall be deemed not tested for the relevant period, and no such deemed non-testing shall be construed as compliance with Section 7.3(c) or as a waiver of any right of Lender thereunder."
+    },
+    {
+      "clauseId": "7.1(c)",
+      "code": "NOI-RECONCILE",
+      "heading": "Net Operating Income",
+      "text": "\"Net Operating Income\" means effective gross income for the applicable period less total operating expenses for such period, computed without add-back, exclusion or reclassification of any expense item that Borrower characterizes as capital, extraordinary or non-recurring, unless such treatment has been approved by Lender in writing prior to delivery of the statement. Where a statement delivered by Borrower reports a Net Operating Income differing from the amount so computed, the amount computed under this Section 7.1(c) shall govern for all purposes under this Agreement, and Borrower shall upon request deliver a written reconciliation of the difference."
+    },
+    {
+      "clauseId": "7.3(b)",
+      "code": "DSCR-MIN",
+      "heading": "Debt Service Coverage Ratio",
+      "text": "Borrower shall maintain, as of each test date, a ratio of Net Operating Income to Annual Debt Service of not less than 1.25 to 1.00. Net Operating Income for this purpose shall be determined in accordance with Section 7.1(c)."
+    },
+    {
+      "clauseId": "7.3(c)",
+      "code": "LTV-MAX",
+      "heading": "Loan-to-Value Ratio",
+      "text": "Borrower shall not permit the ratio of the outstanding principal balance of the Loan to the appraised value of the Property, as established by the most recent appraisal delivered under Section 6.4, to exceed seventy-five percent (75%)."
+    },
+    {
+      "clauseId": "7.3(d)",
+      "code": "OCC-MIN",
+      "heading": "Occupancy",
+      "text": "Borrower shall maintain physical occupancy of the Property of not less than eighty-five percent (85%), measured by leased rentable square feet as a proportion of total rentable square feet as shown on the rent roll delivered under Section 7.1(a)."
+    },
+    {
+      "clauseId": "8.1(a)",
+      "code": "INS-COVERAGE",
+      "heading": "Required Coverage",
+      "text": "Borrower shall keep the Property insured against loss by fire and other hazards covered by a standard extended coverage endorsement in an amount not less than Twenty-Five Million Dollars ($25,000,000), written by a carrier rated not lower than A- (Excellent) by A.M. Best."
+    },
+    {
+      "clauseId": "8.1(c)",
+      "code": "INS-EXPIRY",
+      "heading": "Renewal Certificates",
+      "text": "Borrower shall deliver a renewal certificate evidencing coverage conforming to this Section 8.1 not later than thirty (30) days prior to the expiration of the policy then in force. Any lapse in required coverage shall constitute an immediate Event of Default without cure period."
+    }
+  ]
+}

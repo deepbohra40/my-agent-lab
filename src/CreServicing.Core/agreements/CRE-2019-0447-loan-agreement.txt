@@ -1,0 +1,126 @@
+*** SYNTHETIC TEST DOCUMENT - FABRICATED DATA - NOT A REAL LOAN OR BORROWER ***
+
+LOAN AGREEMENT (EXCERPT)
+
+Lender:      Meridian Commercial Capital LLC
+Borrower:    Lakeview Holdings LLC
+Property:    Lakeview Corporate Center
+Loan Number: CRE-2019-0447
+Dated:       July 1, 2019
+
+This excerpt contains Articles II, VI, VII and VIII only. Articles I, III, IV, V
+and IX through XIV are omitted.
+
+
+ARTICLE II - THE LOAN
+
+  Section 2.1  Principal.
+    Lender has advanced to Borrower the original principal sum of Twenty-Four
+    Million Five Hundred Thousand Dollars ($24,500,000), bearing interest at a
+    fixed rate of six and twenty-five hundredths percent (6.25%) per annum,
+    payable in equal monthly installments aggregating One Million Eight Hundred
+    Forty-Two Thousand Dollars ($1,842,000) per annum (the "Annual Debt
+    Service").
+
+  Section 2.2  Maturity Date.
+    The entire unpaid principal balance, together with all accrued and unpaid
+    interest and all other sums due under the Loan Documents, shall be due and
+    payable in full on July 1, 2029 (the "Maturity Date"). Not later than one
+    hundred eighty (180) days prior to the Maturity Date, Borrower shall notify
+    Lender in writing of its intention to repay the Loan in full, to seek an
+    extension, or to refinance. Failure to deliver such notice shall not extend
+    the Maturity Date.
+
+
+ARTICLE VI - APPRAISALS AND PROPERTY VALUE
+
+  Section 6.4  Appraisals.
+    Lender may, at Borrower's expense but not more frequently than once in any
+    twelve (12) month period absent an Event of Default, obtain an updated
+    appraisal of the Property prepared by an appraiser selected by Lender and
+    conforming to the requirements of Title XI of FIRREA. Until such time as an
+    updated appraisal is delivered, the Loan-to-Value Ratio shall be deemed not
+    tested for the relevant period, and no such deemed non-testing shall be
+    construed as compliance with Section 7.3(c) or as a waiver of any right of
+    Lender thereunder.
+
+
+ARTICLE VII - FINANCIAL REPORTING AND COVENANTS
+
+  Section 7.1  Financial Statements.
+    (a)  Borrower shall deliver to Lender, within forty-five (45) days after the
+         close of each fiscal quarter, a reporting package comprising a current
+         rent roll, an operating statement for the trailing twelve months, a
+         certificate of property insurance then in force, and evidence of
+         payment of real estate taxes.
+
+    (b)  Each operating statement shall be prepared on a basis consistent with
+         that of the preceding period and shall separately state effective gross
+         income and total operating expenses.
+
+    (c)  "Net Operating Income" means effective gross income for the applicable
+         period less total operating expenses for such period, computed without
+         add-back, exclusion or reclassification of any expense item that
+         Borrower characterizes as capital, extraordinary or non-recurring,
+         unless such treatment has been approved by Lender in writing prior to
+         delivery of the statement. Where a statement delivered by Borrower
+         reports a Net Operating Income differing from the amount so computed,
+         the amount computed under this Section 7.1(c) shall govern for all
+         purposes under this Agreement, and Borrower shall upon request deliver
+         a written reconciliation of the difference.
+
+  Section 7.2  Books and Records.
+    Borrower shall maintain complete books and records at the Property and shall
+    permit Lender or its agents to examine and audit the same upon not less than
+    five (5) Business Days' notice.
+
+  Section 7.3  Financial Covenants.
+    (a)  The covenants set forth in this Section 7.3 shall be tested quarterly as
+         of the last day of each fiscal quarter, on a trailing twelve month
+         basis, using the figures derived from the reporting package delivered
+         under Section 7.1.
+
+    (b)  Debt Service Coverage Ratio. Borrower shall maintain, as of each test
+         date, a ratio of Net Operating Income to Annual Debt Service of not less
+         than 1.25 to 1.00. Net Operating Income for this purpose shall be
+         determined in accordance with Section 7.1(c).
+
+    (c)  Loan-to-Value Ratio. Borrower shall not permit the ratio of the
+         outstanding principal balance of the Loan to the appraised value of the
+         Property, as established by the most recent appraisal delivered under
+         Section 6.4, to exceed seventy-five percent (75%).
+
+    (d)  Occupancy. Borrower shall maintain physical occupancy of the Property of
+         not less than eighty-five percent (85%), measured by leased rentable
+         square feet as a proportion of total rentable square feet as shown on
+         the rent roll delivered under Section 7.1(a).
+
+  Section 7.4  Notice of Non-Compliance.
+    Borrower shall notify Lender in writing within five (5) Business Days after
+    becoming aware of any failure to comply with Section 7.3, whether or not
+    Lender has delivered notice of such failure.
+
+
+ARTICLE VIII - INSURANCE
+
+  Section 8.1  Required Coverage.
+    (a)  Borrower shall keep the Property insured against loss by fire and other
+         hazards covered by a standard extended coverage endorsement in an amount
+         not less than Twenty-Five Million Dollars ($25,000,000), written by a
+         carrier rated not lower than A- (Excellent) by A.M. Best.
+
+    (b)  Each policy shall name Lender as mortgagee and loss payee under a
+         standard non-contributory mortgagee clause and shall provide that it may
+         not be cancelled or materially modified without thirty (30) days' prior
+         written notice to Lender.
+
+    (c)  Borrower shall deliver a renewal certificate evidencing coverage
+         conforming to this Section 8.1 not later than thirty (30) days prior to
+         the expiration of the policy then in force. Any lapse in required
+         coverage shall constitute an immediate Event of Default without cure
+         period.
+
+  Section 8.2  Proceeds.
+    All insurance proceeds in excess of Two Hundred Fifty Thousand Dollars
+    ($250,000) shall be paid to Lender and applied to restoration or to the
+    outstanding principal balance at Lender's election.

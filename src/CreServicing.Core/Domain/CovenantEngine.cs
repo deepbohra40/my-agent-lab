@@ -69,7 +69,14 @@ public static class CovenantEngine
         "INS-COVERAGE",
         "INS-EXPIRY",
         "MATURITY",
-        "NOI-RECONCILE"
+        "NOI-RECONCILE",
+
+        // Not produced by any covenant test in this file. It is raised by
+        // ClauseCitationResolver when an agreement index is configured and a
+        // finding could not be grounded in it, and it is declared here because
+        // this set is what the write tool validates against — a code that can
+        // reach a report but not a filing would be a gap, not a safeguard.
+        "CITATION-UNRESOLVED"
     };
 
     /// <summary>

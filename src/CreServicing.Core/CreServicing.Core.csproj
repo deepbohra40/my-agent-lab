@@ -59,6 +59,15 @@
          test runner. Content flows transitively across ProjectReference, which
          is why neither the CLI nor the API restates this. -->
     <Content Include="fixtures\**\*.*" CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- Loan agreements are deliberately NOT under fixtures/. That folder means
+         "borrower-supplied and untrusted" — every document in it is fenced and
+         labelled as data before a model sees it. An agreement is the lender's own
+         executed document, authoritative in the same way MockServicingSystem is,
+         and the covenant language a filed exception quotes has to come from
+         something the borrower cannot edit. Keeping them in separate trees makes
+         that boundary a fact about the repository rather than a convention. -->
+    <Content Include="agreements\**\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
