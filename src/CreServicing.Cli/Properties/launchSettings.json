@@ -1,8 +1,15 @@
 {
   "profiles": {
-    "CreServicing.Core": {
+    "CreServicing.Cli": {
+      "commandName": "Project"
+    },
+    "agent (spends money)": {
       "commandName": "Project",
-      "commandLineArgs": "--agent"
+      "commandLineArgs": "--agent CRE-2019-0447"
+    },
+    "extract-snapshot (spends money)": {
+      "commandName": "Project",
+      "commandLineArgs": "--extract-snapshot CRE-2019-0447"
     }
   }
 }

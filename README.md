@@ -280,6 +280,13 @@ dotnet run --project src/CreServicing.Cli
 dotnet run --project src/CreServicing.Cli -- CRE-2019-0447
 ```
 
+The launch profile is argument-free so that the command above, and pressing F5 in an
+IDE, both land on the free path. The paths that spend money are separate named
+profiles — `agent (spends money)` and `extract-snapshot (spends money)` — because a
+default that quietly costs money is a trap for whoever runs this next. It was: the
+profile used to carry `--agent`, and the line above claimed to be free while calling a
+model on every run.
+
 ```
 CRE-2019-0447  Lakeview Corporate Center
   Borrower        Lakeview Holdings LLC
