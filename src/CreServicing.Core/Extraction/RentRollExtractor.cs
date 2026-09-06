@@ -185,8 +185,9 @@ public sealed class RentRollExtractor(IChatClient chatClient, IOptions<AzureOpen
     /// <summary>
     /// Side by side with fixtures/golden/. Deliberately not a pass/fail grader —
     /// grading by hand is the point at this stage, because the interesting output
-    /// is your notes on *why* a field missed, not a percentage. The xUnit harness
-    /// that turns this into a regression gate is the EVAL roadmap item.
+    /// is your notes on *why* a field missed, not a percentage. The regression
+    /// gate over the same fixtures now exists separately, in
+    /// tests/CreServicing.Core.Eval — this stays for reading a single run by eye.
     /// </summary>
     private static void PrintGoldenComparison(string relativePath, RentRollExtract actual)
     {

@@ -18,13 +18,15 @@ using Microsoft.Extensions.Options;
 // and raise an exception when something fails. Today that somebody is an
 // analyst with a spreadsheet.
 //
-// What runs right now is the half of that which must never be a model's job:
+// The default path is the half of that which must never be a model's job:
 // load the package, run the covenant tests against known numbers, print the
 // exception report. No Azure call, no cost, no API key. Run it and it works.
 //
-// The half that IS the model's job — reading the documents and producing those
-// numbers — is the roadmap at the bottom of this file. Build it as the lectures
-// land.
+// The half that IS the model's job — reading the documents, and deciding which
+// ones to open — is built too, behind the three flags below, because it costs
+// money on every run and the free path above is meant to stay free. What is
+// still missing, and what was skipped on purpose, is the roadmap at the bottom
+// of this file.
 //
 // Everything here is fabricated. See the header comment in MockServicingSystem.
 
@@ -305,6 +307,15 @@ static void PrintFindings(IReadOnlyList<ServicingException> findings)
 // Roadmap: what this grows into, section by section
 // ─────────────────────────────────────────────────────────────────────────────
 //
+// Numbered by the course sections this was built alongside, so the two can be
+// read against each other. Every entry says done, open, or skipped — a section
+// left out because it would demonstrate the framework rather than the domain is
+// a decision, and a decision is worth more written down than a gap is.
+//
+// Open, in the order worth doing them: the S9 NOI reconciliation, then S11 and
+// S14, then the S9 fan-out. Smaller open items sit under EVAL, OCR and FAIL
+// below. Everything else is finished or deliberately not being built.
+//
 // S5  Extraction. Done — all four extractors exist (Extraction/), graded by
 //     hand against fixtures/golden/expected-extractions.json, and
 //     FinancialSnapshotAssembler turns the four extracts into the record
@@ -320,52 +331,122 @@ static void PrintFindings(IReadOnlyList<ServicingException> findings)
 //     zero-cost default. CRE-2018-0233 has no fixture package by design — it
 //     stays hand-keyed-only, demonstrating the "no documents on file" path.
 //
-// S6  Tools. Fill in Tools/ServicingTools.cs. The agent now decides which
-//     documents to open instead of being handed all of them, and
-//     CreateServicingException goes behind human approval.
-//     Demo beat: approve one exception, reject another, show the run resume.
+// S6  Tools. Done — Tools/ServicingTools.cs. The agent decides which documents
+//     to open instead of being handed all of them, and CreateServicingException
+//     goes behind human approval. Reachable via --agent.
 //
-// S7  Memory. Prior-period snapshots per loan, so the agent sees the trend —
-//     "occupancy has fallen for three consecutive quarters" is an asset
-//     management conversation that no single-period test can produce.
+//     The demo beat this was written for has actually been run: five rounds,
+//     four approvals and one deliberate refusal, and the agent honoured the
+//     refusal without retrying or rewording it. That run is also what surfaced
+//     the approval loop dying after round one — a bug no test caught, because
+//     every test approved everything. See ServicingRunService.
 //
-// S8  Workflow. Classify → route by DocumentType to the right extractor.
-//     The tax bill and the rent roll should not share a prompt.
+// S7  Memory. Split, and only half of it is deprioritised.
 //
-// S9  Patterns. Fan the four extractors out concurrently, aggregate into one
-//     snapshot, then one covenant pass. Handoff to an escalation agent when a
-//     breach is severe enough to involve the asset manager.
-//     Also: the reconciliation the operating statement fixture sets up —
+//     The half that exists: agent sessions and persisted run state, which the
+//     approval loop needed anyway. See Core/Runs/.
+//
+//     The half deliberately not built: prior-period snapshots per loan, so the
+//     agent sees the trend. "Occupancy has fallen for three consecutive
+//     quarters" is an asset management conversation that no single-period test
+//     can produce — worth being able to describe, not worth the fixture cost
+//     of three quarters of hand-verified packages per loan.
+//
+// S8  Workflows and orchestration. Not built, on purpose. The orchestration
+//     here is an agent tool loop; re-expressing it as a graph of executors and
+//     edges would demonstrate the framework rather than the domain.
+//
+//     Document routing is not a workflow problem either, and is already
+//     solved: FinancialSnapshotAssembler routes by filename substring. That is
+//     an honest stand-in for a classifier — no classification step exists in
+//     this project and none is planned — and the
+//     interesting part — that the tax bill and the rent roll must not share a
+//     prompt — is already true, since each extractor carries its own.
+//
+// S9  Patterns. Two of the three are worth building; handoff is not.
+//
+//     Worth doing, still open: fan the four extractors out concurrently and
+//     aggregate into one snapshot, then one covenant pass. Cheap since the
+//     extractors became injected instances with no shared static state.
+//
+//     Worth doing, still open, and the highest-value item left in this file:
+//     the reconciliation the operating statement fixture sets up —
 //     borrower-reported NOI is 2,284,000, recomputed is 2,130,000, and the
-//     154,000 add-back is a finding in its own right. Do not let it pass.
+//     154,000 add-back is a finding in its own right. Do not let it pass. It
+//     currently passes: CovenantEngine has no reconciliation test and no code
+//     for it in KnownCodes, so a live run flags the add-back in prose and files
+//     nothing. Prose is not an exception report.
 //
-// S11 RAG. Index the loan agreement in Qdrant and fill ClauseCitation with the
+//     Skipped: handoff to an escalation agent, and group chat. The routing
+//     decision is a severity threshold, which is an if statement, and dressing
+//     it as an agent pattern would make the system harder to audit rather than
+//     more capable.
+//
+// S11 RAG. Open. Index the loan agreement and fill ClauseCitation with the
 //     covenant language the finding is asserted under. An exception that quotes
 //     section 7.3(b) is a document a servicer can send. One that says "DSCR is
 //     low" is not.
 //
-// S13 A2A. Expose covenant evaluation as a service. The credible story is a
-//     portfolio-surveillance agent that calls it across many loans.
+//     Decide the store before writing any of it. The lectures use Qdrant in
+//     Docker and this machine has none — so it is Qdrant Cloud, an in-memory
+//     Microsoft.Extensions.VectorData store, or installing Docker. The design
+//     consequence outlives the choice: CI is deliberately credential-free and
+//     offline, so nothing Qdrant-backed can run there. ClauseCitation goes
+//     behind an interface with an in-memory implementation for tests — the same
+//     seam, for the same reason, as IRunStore and InMemoryRunStore.
 //
-// S14 MCP. Turn MockServicingSystem into an MCP server so the agent reaches the
-//     system of record over a protocol. This is the section that maps most
-//     directly onto integrating with a real servicing platform.
+// S13 A2A. Not built, on purpose. Exposing covenant evaluation as a service is
+//     the credible story — a portfolio-surveillance agent calling it across many
+//     loans — but CreServicing.Api already exposes it over HTTP, so what A2A
+//     adds is a protocol, not a capability. Lowest weight of anything left.
 //
-// S15 AG-UI. Exception queue with the approval step in the loop, streaming.
+// S14 MCP. Open. Turn MockServicingSystem into an MCP server so the agent
+//     reaches the system of record over a protocol. This is the section that
+//     maps most directly onto integrating with a real servicing platform.
+//
+// S15 AG-UI. Mostly done, and not by working on S15.
+//
+//     The hard part was never the UI — it was suspending a run mid-approval and
+//     resuming it in a later request, which the HTTP surface needed first. That
+//     state machine exists: Core/Runs/ServicingRun.cs and the two-request
+//     approval flow in CreServicing.Api. What is left is streaming and a front
+//     end. ServicingRunner does not stream yet on purpose;
+//     ScriptedChatClient.GetStreamingResponseAsync throws with a comment
+//     pointing here.
 //
 // ─────────────────────────────────────────────────────────────────────────────
-// Not in the course, and asked about in interviews. Budget time separately.
+// Not in the course, and asked about in interviews anyway.
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// EVAL   An xUnit project over fixtures/golden/. Field-level extraction accuracy,
-//        and a test that fails when a prompt edit regresses it. Grow the golden
-//        set to ~20 documents. This is the strongest single artifact here —
-//        "I measured it" is rare, and it is the difference between having taken
-//        a course and having built something.
+// EVAL   Done — tests/CreServicing.Core.Eval, a separate project from the free
+//        suite because the moment a test needs a model it stops belonging in a
+//        job that runs on every push. Field-level accuracy against
+//        fixtures/golden/expected-extractions.json, live calls and exact-match
+//        assertions rather than record/replay, so a prompt edit that regresses
+//        extraction fails a test.
 //
-// SEC    fixtures/adversarial/ must be a passing test, not a curiosity. Untrusted
-//        document text, delimited and labelled as data. Prove the injection fails
-//        AND that the attempt gets surfaced.
+//        Two things still open, both known deferrals rather than oversights:
+//        the golden set is 9 documents against a target of ~20, and the Eval
+//        project is not wired into CI — that needs its own scheduled workflow,
+//        a cost budget, and Azure credentials in the repo.
+//
+// SEC    Done — fixtures/adversarial/ is a passing test in that suite, not a
+//        curiosity. Untrusted document text, delimited and labelled as data.
+//        The injection fails and the attempt is surfaced rather than swallowed.
+//
+// HOST   Done — the composition root above, CreServicing.Api, and Core/Runs/.
+//        DI, validated configuration, DefaultAzureCredential, bounds and
+//        cancellation, then the same domain behind HTTP with the approval loop
+//        surviving across two requests. None of this is a course section, and
+//        it is half of what a .NET screen actually asks about.
+//
+// OTEL   Done — Core/Diagnostics/ServicingTelemetry.cs and Api/Telemetry.cs.
+//        Spans on both runner turns and all five tools, IChatClient wrapped
+//        with UseOpenTelemetry, and src/CreServicing.AppHost renders the span
+//        tree in the Aspire dashboard. Core carries no OTel package, so the
+//        free suite stays free. Sensitive-data capture is off on purpose: it
+//        would ship whole borrower documents to the collector, undoing the
+//        "names and sizes, never content" rule the tools follow.
 //
 // COST   Done — Cost/ModelCost.cs and Cost/CostReport.cs, printed at the end of
 //        --extract-snapshot. Extractors return ExtractionResult<T> carrying the
@@ -385,10 +466,15 @@ static void PrintFindings(IReadOnlyList<ServicingException> findings)
 //        than three one-shot calls, and a real package is scanned pages
 //        through OCR rather than clean text.
 //
-// OCR    Real packages are scans. Azure Document Intelligence behind
-//        DocumentStore. Know that prebuilt-layout exists and roughly what it
-//        costs per page even if you never wire it up.
+// OCR    Open, and probably stays open. Real packages are scans, so this is
+//        Azure Document Intelligence behind DocumentStore. Know that
+//        prebuilt-layout exists and roughly what it costs per page even if you
+//        never wire it up — the fixtures here are clean text, and saying so is
+//        more honest than pretending the pipeline has seen a scan.
 //
-// FAIL   What happens when extraction confidence is low, a field is null, or two
-//        documents disagree? The answer that impresses is never "retry" — it is
-//        "route to a human, with the specific question that needs answering."
+// FAIL   Open, and the one worth thinking about before writing. What happens
+//        when extraction confidence is low, a field is null, or two documents
+//        disagree? The answer that impresses is never "retry" — it is "route to
+//        a human, with the specific question that needs answering." The
+//        approval loop under S6 is already the mechanism for that; what is
+//        missing is the trigger.

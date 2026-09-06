@@ -5,11 +5,12 @@ using CreServicing.Core.Data;
 
 // CRE post-close document intake and covenant compliance, behind HTTP.
 //
-// This is item 3 stages B and C of the roadmap in ../CreServicing.Cli/Program.cs.
-// Stage B put the paths with no approval step behind an API. Stage C put the one
-// with an approval step behind it too, which was the actual design problem: the
-// console loop worked because Console.ReadLine() blocked and held the run in
-// memory, and there is no equivalent here. See Core/Runs/ServicingRun.cs.
+// This is the HOST entry in the roadmap at the bottom of
+// ../CreServicing.Cli/Program.cs, built in two stages. The first put the paths
+// with no approval step behind an API. The second put the one with an approval
+// step behind it too, which was the actual design problem: the console loop
+// worked because Console.ReadLine() blocked and held the run in memory, and
+// there is no equivalent here. See Core/Runs/ServicingRun.cs.
 //
 // The API adds no domain logic. Every endpoint resolves something out of
 // CreServicing.Core and shapes the result for the wire — if a rule lived here that
